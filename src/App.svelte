@@ -12,7 +12,7 @@
   let originalBlob = null;
 
   // state: border/frame settings
-  let borderSize = 16;
+  let borderSize = 32;
   let borderRadius = 16;
   let windowEnabled = false;
 
