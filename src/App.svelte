@@ -1,10 +1,15 @@
 <script>
+  import { onMount, tick } from "svelte";
+
   // state: image
   let imgEl;
   let imgSrc = "";
   let imgLoaded = false;
   let fileInput;
   let wrapperEl;
+
+  // state: undo (reset to original)
+  let originalBlob = null;
 
   // state: border/frame settings
   let borderSize = 16;
@@ -38,6 +43,8 @@
   let compressQuality = 80;
   let showCompressSlider = false;
   let compressState = "idle";
+  let originalFileSize = null;
+  let compressedFileSize = null;
 
   // state: annotations
   let annotations = [];
@@ -60,9 +67,42 @@
   let cropDragging = null;
   let cropDragStart = null;
 
+  // state: clear confirmation
+  let showClearConfirm = false;
+
+  // state: drag-and-drop
+  let isDraggingOver = false;
+
+  // state: sidebar scroll indicator
+  let sidebarScrollEl;
+  let showScrollHint = false;
+
+  function checkScrollHint() {
+    if (!sidebarScrollEl) return;
+    const { scrollTop, scrollHeight, clientHeight } = sidebarScrollEl;
+    showScrollHint = scrollHeight - scrollTop - clientHeight > 0;
+  }
+
+  function onSidebarScroll() {
+    checkScrollHint();
+  }
+
+  onMount(() => {
+    checkScrollHint();
+    window.addEventListener("resize", checkScrollHint);
+    return () => window.removeEventListener("resize", checkScrollHint);
+  });
+
+  // re-check when compress panel toggles
+  $: if (showCompressSlider !== undefined) {
+    tick().then(checkScrollHint);
+  }
+
   // constants
-  const BORDER_SIZES = [0, 4, 8, 16, 24, 32, 48, 64, 128];
-  const RADII = [0, 8, 16, 32, 64, 128];
+  const BORDER_MIN = 0;
+  const BORDER_MAX = 128;
+  const RADIUS_MIN = 0;
+  const RADIUS_MAX = 128;
 
   const CHROME_H = 40;
   const CHROME_BG = "#2a2a2e";
@@ -84,13 +124,11 @@
   $: hexColor = "#" + (borderColor.replace(/^#/, "").trim() || "f4f5f6");
   $: hasImage = !!imgSrc;
 
-  // active gradient colors (preset or custom)
   $: activeGradientColors = useCustomGradient
     ? [customGradientA, customGradientB]
     : (PRESET_GRADIENTS.find((g) => g.id === selectedGradientId)?.colors ??
       PRESET_GRADIENTS[0].colors);
 
-  // CSS mesh gradient string for preview
   function meshGradientCSS(colors) {
     const [c1, c2, c3] =
       colors.length >= 3 ? colors : [colors[0], colors[1], colors[0]];
@@ -113,7 +151,6 @@
     ? meshGradientCSSCustom(customGradientA, customGradientB)
     : meshGradientCSS(activeGradientColors);
 
-  // wrapper background style
   $: wrapperBg = bgMode === "gradient" ? activeMeshCSS : hexColor;
 
   function makeTeardropPath(r, tail) {
@@ -140,14 +177,40 @@
   }
 
   function getImgOffset() {
-    return {
-      x: borderSize,
-      y: borderSize + (windowEnabled ? CHROME_H : 0),
-    };
+    return { x: borderSize, y: borderSize + (windowEnabled ? CHROME_H : 0) };
   }
 
-  // IMAGE LOADING
+  // UNDO (reset to original)
+  function storeOriginal(blob) {
+    originalBlob = blob;
+  }
 
+  function resetToOriginal() {
+    if (!originalBlob) return;
+    if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
+    imgLoaded = false;
+    imgSrc = URL.createObjectURL(originalBlob);
+    annotations = [];
+    nextCounterId = 1;
+    selectedId = null;
+    activeTool = null;
+    cropRect = null;
+    cropPreview = null;
+    showCompressSlider = false;
+    compressedFileSize = null;
+    compressState = "idle";
+    borderSize = 16;
+    borderRadius = 16;
+    windowEnabled = false;
+    bgMode = "solid";
+    borderColor = "f4f5f6";
+    selectedGradientId = "g1";
+    useCustomGradient = false;
+  }
+
+  $: hasChanges = hasImage && originalBlob && imgLoaded;
+
+  // IMAGE LOADING
   function loadBlob(blob) {
     if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
     imgLoaded = false;
@@ -159,6 +222,9 @@
     cropRect = null;
     cropPreview = null;
     showCompressSlider = false;
+    originalFileSize = blob.size;
+    compressedFileSize = null;
+    storeOriginal(blob);
   }
 
   function onImgLoad() {
@@ -181,7 +247,28 @@
     fileInput.value = "";
   }
 
-  function clearImage() {
+  // DRAG AND DROP
+  function handleDragOver(e) {
+    e.preventDefault();
+    isDraggingOver = true;
+  }
+  function handleDragLeave() {
+    isDraggingOver = false;
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    isDraggingOver = false;
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0 && files[0].type.startsWith("image/")) {
+      loadBlob(files[0]);
+    }
+  }
+
+  // CLEAR
+  function requestClear() {
+    showClearConfirm = true;
+  }
+  function confirmClear() {
     if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
     imgSrc = "";
     imgLoaded = false;
@@ -194,10 +281,16 @@
     showCompressSlider = false;
     compressQuality = 80;
     compressState = "idle";
+    originalFileSize = null;
+    compressedFileSize = null;
+    originalBlob = null;
+    showClearConfirm = false;
+  }
+  function cancelClear() {
+    showClearConfirm = false;
   }
 
   // TOOL SELECTION
-
   function toggleTool(tool) {
     activeTool = activeTool === tool ? null : tool;
     selectedId = null;
@@ -211,17 +304,14 @@
   }
 
   // PLACING ANNOTATIONS
-
   function onImageAreaClick(e) {
     if (!activeTool || activeTool === "rect" || activeTool === "crop") return;
     if (dragging) return;
     if (e.target.closest(".anno-hit")) return;
-
     const rect = e.currentTarget.getBoundingClientRect();
     const off = getImgOffset();
     const x = e.clientX - rect.left + off.x;
     const y = e.clientY - rect.top + off.y;
-
     const id = Date.now() + Math.random();
     const ann = {
       id,
@@ -232,14 +322,12 @@
       rotation: 0,
     };
     if (activeTool === "counter") ann.count = nextCounterId++;
-
     annotations = [...annotations, ann];
     selectedId = id;
     if (activeTool === "arrow") activeTool = null;
   }
 
   // DRAWING RECTANGLES
-
   function onImageAreaMouseDown(e) {
     if (activeTool === "rect") {
       if (e.target.closest(".anno-hit")) return;
@@ -281,8 +369,8 @@
     }
     if (activeTool === "crop" && cropStart) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
+      const cx = e.clientX - rect.left,
+        cy = e.clientY - rect.top;
       const imgW = imgEl.getBoundingClientRect().width;
       const imgH = imgEl.getBoundingClientRect().height;
       cropPreview = {
@@ -333,7 +421,6 @@
   }
 
   // CROP HANDLE DRAGGING
-
   function getImgRelPos(e) {
     const rect = imgEl.getBoundingClientRect();
     return {
@@ -372,8 +459,8 @@
             rotation: angle + Math.PI / 2,
           };
         }
-        const newBulbX = pos.x - dragOffset.x;
-        const newBulbY = pos.y - dragOffset.y;
+        const newBulbX = pos.x - dragOffset.x,
+          newBulbY = pos.y - dragOffset.y;
         const angle = a.rotation - Math.PI / 2;
         return {
           ...a,
@@ -385,8 +472,8 @@
     }
     if (cropDragging && cropRect) {
       const pos = getImgRelPos(e);
-      const dx = pos.x - cropDragStart.x;
-      const dy = pos.y - cropDragStart.y;
+      const dx = pos.x - cropDragStart.x,
+        dy = pos.y - cropDragStart.y;
       const imgW = imgEl.getBoundingClientRect().width;
       const imgH = imgEl.getBoundingClientRect().height;
       let { x, y, w, h } = cropRect;
@@ -438,13 +525,12 @@
   }
 
   // APPLY CROP
-
   function applyCrop() {
     if (!cropRect || !imgEl || !imgLoaded) return;
-    const dispW = imgEl.getBoundingClientRect().width;
-    const dispH = imgEl.getBoundingClientRect().height;
-    const sx = imgEl.naturalWidth / dispW;
-    const sy = imgEl.naturalHeight / dispH;
+    const dispW = imgEl.getBoundingClientRect().width,
+      dispH = imgEl.getBoundingClientRect().height;
+    const sx = imgEl.naturalWidth / dispW,
+      sy = imgEl.naturalHeight / dispH;
     const cx = Math.round(cropRect.x * sx),
       cy = Math.round(cropRect.y * sy);
     const cw = Math.round(cropRect.w * sx),
@@ -467,7 +553,7 @@
     }, "image/png");
   }
 
-  function cancelCrop() {
+  function cancelCropAction() {
     cropRect = null;
     cropPreview = null;
     cropStart = null;
@@ -475,9 +561,16 @@
   }
 
   // COMPRESS
-
   function toggleCompressSlider() {
     showCompressSlider = !showCompressSlider;
+    compressedFileSize = null;
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(2) + " MB";
   }
 
   function compressImage() {
@@ -493,11 +586,15 @@
           setTimeout(() => (compressState = "idle"), 1500);
           return;
         }
+        compressedFileSize = blob.size;
         if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
         imgLoaded = false;
         imgSrc = URL.createObjectURL(blob);
         compressState = "success";
-        setTimeout(() => (compressState = "idle"), 1500);
+        setTimeout(() => {
+          compressState = "idle";
+          showCompressSlider = false;
+        }, 1200);
       },
       "image/jpeg",
       compressQuality / 100,
@@ -505,7 +602,6 @@
   }
 
   // ANNOTATION DRAGGING
-
   function getRelPos(e) {
     const rect = wrapperEl.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -532,9 +628,12 @@
   }
 
   // KEYBOARD
-
   function handleKeydown(e) {
     if (e.key === "Escape") {
+      if (showClearConfirm) {
+        showClearConfirm = false;
+        return;
+      }
       selectedId = null;
       activeTool = null;
       rectStart = null;
@@ -559,11 +658,17 @@
       e.preventDefault();
       applyCrop();
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === "z" && originalBlob) {
+      e.preventDefault();
+      resetToOriginal();
+    }
   }
 
   // CLICK-AWAY
-
   function onAppClick(e) {
+    if (showClearConfirm && !e.target.closest(".confirm-dialog")) {
+      showClearConfirm = false;
+    }
     const isCanvasArea = e.target.closest(".canvas-area");
     const isToolControl =
       e.target.closest(".anno-buttons") ||
@@ -589,6 +694,7 @@
 
   function onCanvasBgClick(e) {
     if (e.target.closest(".wrapper")) return;
+    if (e.target.closest(".crop-float-actions")) return;
     if (activeTool === "crop") return;
     activeTool = null;
     rectStart = null;
@@ -596,8 +702,7 @@
     selectedId = null;
   }
 
-  // EXPORT — draw gradient or solid onto canvas
-
+  // EXPORT
   function drawBgToCanvas(ctx, w, h) {
     if (bgMode === "gradient") {
       const colors = useCustomGradient
@@ -606,34 +711,24 @@
           PRESET_GRADIENTS[0].colors);
       const [c1, c2, c3] =
         colors.length >= 3 ? colors : [colors[0], colors[1], colors[0]];
-
-      // base fill
       ctx.fillStyle = c1;
       ctx.fillRect(0, 0, w, h);
-
-      // top-left blob
       const g1 = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.8);
       g1.addColorStop(0, c1 + "ff");
       g1.addColorStop(1, c1 + "00");
       ctx.fillStyle = g1;
       ctx.fillRect(0, 0, w, h);
-
-      // top-right blob
       const g2 = ctx.createRadialGradient(w, 0, 0, w, 0, w * 0.8);
       g2.addColorStop(0, c2 + "ff");
       g2.addColorStop(1, c2 + "00");
       ctx.fillStyle = g2;
       ctx.fillRect(0, 0, w, h);
-
-      // bottom-right blob
       const c3hex = c3 ?? c1;
       const g3 = ctx.createRadialGradient(w, h, 0, w, h, w * 0.8);
       g3.addColorStop(0, c3hex + "ff");
       g3.addColorStop(1, c3hex + "00");
       ctx.fillStyle = g3;
       ctx.fillRect(0, 0, w, h);
-
-      // bottom-left blob
       const g4 = ctx.createRadialGradient(0, h, 0, 0, h, w * 0.8);
       g4.addColorStop(0, c2 + "cc");
       g4.addColorStop(1, c2 + "00");
@@ -647,28 +742,23 @@
 
   function renderCanvas() {
     if (!imgEl || !imgLoaded) return null;
-    const natW = imgEl.naturalWidth;
-    const natH = imgEl.naturalHeight;
-    const dispW = imgEl.getBoundingClientRect().width;
-    const dispH = imgEl.getBoundingClientRect().height;
+    const natW = imgEl.naturalWidth,
+      natH = imgEl.naturalHeight;
+    const dispW = imgEl.getBoundingClientRect().width,
+      dispH = imgEl.getBoundingClientRect().height;
     if (!natW || !natH || !dispW || !dispH) return null;
-
-    const sx = natW / dispW;
-    const sy = natH / dispH;
-    const pad = Math.round(borderSize * sx);
-    const rad = Math.round(borderRadius * sx);
+    const sx = natW / dispW,
+      sy = natH / dispH;
+    const pad = Math.round(borderSize * sx),
+      rad = Math.round(borderRadius * sx);
     const chromeH = windowEnabled ? Math.round(CHROME_H * sx) : 0;
-
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     canvas.width = natW + pad * 2;
     canvas.height = natH + pad * 2 + chromeH;
-
     drawBgToCanvas(ctx, canvas.width, canvas.height);
-
-    const imgX = pad;
-    const imgY = pad + chromeH;
-
+    const imgX = pad,
+      imgY = pad + chromeH;
     if (windowEnabled) {
       const r = Math.round(CHROME_CORNER * sx);
       ctx.fillStyle = CHROME_BG;
@@ -680,9 +770,9 @@
       ctx.arcTo(pad, pad, pad + natW, pad, r);
       ctx.closePath();
       ctx.fill();
-      const dr = Math.round(CHROME_DOT_R * sx);
-      const dg = Math.round(CHROME_DOT_GAP * sx);
-      const dl = Math.round(CHROME_DOT_LEFT * sx);
+      const dr = Math.round(CHROME_DOT_R * sx),
+        dg = Math.round(CHROME_DOT_GAP * sx),
+        dl = Math.round(CHROME_DOT_LEFT * sx);
       for (let i = 0; i < 3; i++) {
         ctx.fillStyle = CHROME_DOTS[i];
         ctx.beginPath();
@@ -690,7 +780,6 @@
         ctx.fill();
       }
     }
-
     if (!windowEnabled && rad > 0) {
       ctx.save();
       ctx.beginPath();
@@ -706,9 +795,8 @@
     } else {
       ctx.drawImage(imgEl, imgX, imgY);
     }
-
-    const pox = borderSize;
-    const poy = borderSize + (windowEnabled ? CHROME_H : 0);
+    const pox = borderSize,
+      poy = borderSize + (windowEnabled ? CHROME_H : 0);
     for (const a of annotations) {
       if (a.type === "rect")
         drawRectOnCanvas(ctx, a, sx, sy, imgX, imgY, pox, poy);
@@ -828,444 +916,360 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="app" on:click={onAppClick}>
   <div class="sidebar">
-    <!-- BORDER SECTION -->
-    <div class="section-label">Border</div>
-
-    <!-- SIZE -->
-    <div class="field field-inline">
-      <span class="label">Size</span>
-      <div class="select-wrap select-wrap-sm">
-        <select bind:value={borderSize}>
-          {#each BORDER_SIZES as s}
-            <option value={s}>{s === 0 ? "None" : s + "px"}</option>
-          {/each}
-        </select>
-        <svg
-          class="chevron"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </div>
-    </div>
-
-    <!-- RADIUS -->
-    <div class="field field-inline" class:disabled-field={windowEnabled}>
-      <span class="label">Radius</span>
-      <div class="select-wrap select-wrap-sm">
-        <select bind:value={borderRadius} disabled={windowEnabled}>
-          {#each RADII as r}
-            <option value={r}>{r === 0 ? "None" : r + "px"}</option>
-          {/each}
-        </select>
-        <svg
-          class="chevron"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
-      </div>
-    </div>
-
-    <!-- WINDOW -->
-    <div class="field field-inline">
-      <span class="label">Window</span>
-      <button
-        class="toggle"
-        class:on={windowEnabled}
-        on:click={() => (windowEnabled = !windowEnabled)}
-        role="switch"
-        aria-checked={windowEnabled}
-      >
-        <span class="toggle-dot" class:on={windowEnabled}></span>
-      </button>
-    </div>
-
-    <!-- BG TABS -->
-    <div class="bg-tabs field">
-      <div class="tab-row">
-        <button
-          class="tab-btn"
-          class:tab-active={bgMode === "solid"}
-          on:click={() => (bgMode = "solid")}>Solid</button
-        >
-        <button
-          class="tab-btn"
-          class:tab-active={bgMode === "gradient"}
-          on:click={() => (bgMode = "gradient")}>Gradient</button
-        >
-      </div>
-
-      {#if bgMode === "solid"}
-        <!-- SOLID COLOR PANEL -->
-        <div class="solid-panel">
-          <div class="solid-swatches">
-            <!-- Light -->
-            <button
-              class="color-swatch"
-              class:active={borderColor.toLowerCase() === "f4f5f6"}
-              style="background:#f4f5f6; border:1px solid #3f3f46"
-              on:click={() => (borderColor = "f4f5f6")}
-            ></button>
-            <!-- Dark -->
-            <button
-              class="color-swatch"
-              class:active={borderColor.toLowerCase() === "18181b"}
-              style="background:#18181b; border:1px solid #3f3f46"
-              on:click={() => (borderColor = "18181b")}
-            ></button>
-            <!-- Warm -->
-            <button
-              class="color-swatch"
-              class:active={"#" + borderColor.replace(/^#/, "") === "#f97316"}
-              style="background:#f97316"
-              on:click={() => (borderColor = "f97316")}
-            ></button>
-            <!-- Cool -->
-            <button
-              class="color-swatch"
-              class:active={"#" + borderColor.replace(/^#/, "") === "#3b82f6"}
-              style="background:#3b82f6"
-              on:click={() => (borderColor = "3b82f6")}
-            ></button>
-            <!-- + custom color picker -->
-            <div class="plus-color-wrap" title="Custom color">
-              <input
-                type="color"
-                value={hexColor}
-                class="plus-color-input"
-                on:input={(e) =>
-                  (borderColor = e.target.value.replace("#", ""))}
-              />
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                class="plus-icon"
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      {:else}
-        <!-- GRADIENT PANEL -->
-        <div class="gradient-panel">
-          <!-- preset swatches -->
-          <div class="gradient-swatches">
-            {#each PRESET_GRADIENTS as g}
-              <button
-                class="grad-swatch"
-                class:active={selectedGradientId === g.id && !useCustomGradient}
-                style="background: {meshGradientCSS(g.colors)}"
-                title={g.name}
-                on:click={() => {
-                  selectedGradientId = g.id;
-                  useCustomGradient = false;
-                }}
-              ></button>
-            {/each}
-          </div>
-
-          <!-- custom gradient -->
-          <div class="custom-grad-section">
-            <button
-              class="custom-grad-toggle"
-              class:active={useCustomGradient}
-              on:click={() => (useCustomGradient = true)}
+    <div
+      class="sidebar-scroll"
+      bind:this={sidebarScrollEl}
+      on:scroll={onSidebarScroll}
+    >
+      <!-- BORDER -->
+      <div class="section-card">
+        <div class="section-label">Border</div>
+        <div class="field field-col">
+          <div class="slider-header">
+            <span class="label">Size</span><span class="slider-value"
+              >{borderSize === 0 ? "None" : borderSize + "px"}</span
             >
-              Custom
-            </button>
+          </div>
+          <input
+            type="range"
+            min={BORDER_MIN}
+            max={BORDER_MAX}
+            step="1"
+            bind:value={borderSize}
+            class="styled-slider"
+          />
+        </div>
+        <div class="field field-col" class:disabled-field={windowEnabled}>
+          <div class="slider-header">
+            <span class="label">Radius</span><span class="slider-value"
+              >{borderRadius === 0 ? "None" : borderRadius + "px"}</span
+            >
+          </div>
+          <input
+            type="range"
+            min={RADIUS_MIN}
+            max={RADIUS_MAX}
+            step="1"
+            bind:value={borderRadius}
+            disabled={windowEnabled}
+            class="styled-slider"
+          />
+        </div>
+        <div class="field field-inline">
+          <div class="window-label-row">
+            <span class="label">Window</span>
+            <span class="window-dots-hint"
+              ><span class="hint-dot" style="background:#ff5f57"></span><span
+                class="hint-dot"
+                style="background:#febc2e"
+              ></span><span class="hint-dot" style="background:#28c840"
+              ></span></span
+            >
+          </div>
+          <button
+            class="toggle"
+            class:on={windowEnabled}
+            on:click={() => (windowEnabled = !windowEnabled)}
+            role="switch"
+            aria-checked={windowEnabled}
+          >
+            <span class="toggle-dot" class:on={windowEnabled}></span>
+          </button>
+        </div>
+      </div>
 
-            {#if useCustomGradient}
-              <div class="custom-grad-pickers">
-                <div class="custom-grad-picker-wrap" title="Color A">
+      <!-- BACKGROUND -->
+      <div class="section-card">
+        <div class="section-label">Background</div>
+        <div class="bg-tabs field">
+          <div class="tab-row">
+            <button
+              class="tab-btn"
+              class:tab-active={bgMode === "solid"}
+              on:click={() => (bgMode = "solid")}>Solid</button
+            >
+            <button
+              class="tab-btn"
+              class:tab-active={bgMode === "gradient"}
+              on:click={() => (bgMode = "gradient")}>Gradient</button
+            >
+          </div>
+          {#if bgMode === "solid"}
+            <div class="solid-panel">
+              <div class="solid-swatches">
+                <button
+                  class="color-swatch"
+                  class:active={borderColor.toLowerCase() === "f4f5f6"}
+                  style="background:#f4f5f6; border:1px solid #3f3f46"
+                  on:click={() => (borderColor = "f4f5f6")}
+                ></button>
+                <button
+                  class="color-swatch"
+                  class:active={borderColor.toLowerCase() === "18181b"}
+                  style="background:#18181b; border:1px solid #3f3f46"
+                  on:click={() => (borderColor = "18181b")}
+                ></button>
+                <button
+                  class="color-swatch"
+                  class:active={"#" + borderColor.replace(/^#/, "") ===
+                    "#f97316"}
+                  style="background:#f97316"
+                  on:click={() => (borderColor = "f97316")}
+                ></button>
+                <button
+                  class="color-swatch"
+                  class:active={"#" + borderColor.replace(/^#/, "") ===
+                    "#3b82f6"}
+                  style="background:#3b82f6"
+                  on:click={() => (borderColor = "3b82f6")}
+                ></button>
+                <div class="custom-color-wrap" title="Pick custom color">
                   <input
                     type="color"
-                    bind:value={customGradientA}
-                    class="grad-color-input"
+                    value={hexColor}
+                    class="custom-color-input"
+                    on:input={(e) =>
+                      (borderColor = e.target.value.replace("#", ""))}
                   />
-                  <div
-                    class="grad-color-preview"
-                    style="background:{customGradientA}"
-                  ></div>
-                </div>
-                <div class="custom-grad-arrow">→</div>
-                <div class="custom-grad-picker-wrap" title="Color B">
-                  <input
-                    type="color"
-                    bind:value={customGradientB}
-                    class="grad-color-input"
-                  />
-                  <div
-                    class="grad-color-preview"
-                    style="background:{customGradientB}"
-                  ></div>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="picker-icon"
+                    ><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" /></svg
+                  >
                 </div>
               </div>
-              <!-- live preview -->
-              <div
-                class="custom-grad-preview"
-                style="background:{meshGradientCSSCustom(
-                  customGradientA,
-                  customGradientB,
-                )}"
-              ></div>
-            {/if}
+            </div>
+          {:else}
+            <div class="gradient-panel">
+              <div class="gradient-swatches">
+                {#each PRESET_GRADIENTS as g}
+                  <button
+                    class="grad-swatch"
+                    class:active={selectedGradientId === g.id &&
+                      !useCustomGradient}
+                    style="background: {meshGradientCSS(g.colors)}"
+                    title={g.name}
+                    on:click={() => {
+                      selectedGradientId = g.id;
+                      useCustomGradient = false;
+                    }}
+                  ></button>
+                {/each}
+              </div>
+              <div class="custom-grad-section">
+                <button
+                  class="custom-grad-toggle"
+                  class:active={useCustomGradient}
+                  on:click={() => (useCustomGradient = true)}>Custom</button
+                >
+                {#if useCustomGradient}
+                  <div class="custom-grad-pickers">
+                    <div class="custom-grad-picker-wrap" title="Color A">
+                      <input
+                        type="color"
+                        bind:value={customGradientA}
+                        class="grad-color-input"
+                      />
+                      <div
+                        class="grad-color-preview"
+                        style="background:{customGradientA}"
+                      ></div>
+                    </div>
+                    <div class="custom-grad-arrow">→</div>
+                    <div class="custom-grad-picker-wrap" title="Color B">
+                      <input
+                        type="color"
+                        bind:value={customGradientB}
+                        class="grad-color-input"
+                      />
+                      <div
+                        class="grad-color-preview"
+                        style="background:{customGradientB}"
+                      ></div>
+                    </div>
+                  </div>
+                  <div
+                    class="custom-grad-preview"
+                    style="background:{meshGradientCSSCustom(
+                      customGradientA,
+                      customGradientB,
+                    )}"
+                  ></div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <!-- ANNOTATIONS -->
+      <div class="section-card">
+        <div class="section-label">Annotations</div>
+        <div class="marker-colors">
+          {#each PALETTE as pc}<button
+              class="color-swatch"
+              class:active={markerColor === pc}
+              style="background:{pc}"
+              on:click={() => (markerColor = pc)}
+            ></button>{/each}
+          <div class="custom-color-wrap" title="Pick custom color">
+            <input
+              type="color"
+              bind:value={customMarkerColor}
+              class="custom-color-input"
+              on:input={() => (markerColor = customMarkerColor)}
+            />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="picker-icon"
+              ><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" /></svg
+            >
           </div>
         </div>
-      {/if}
-    </div>
-
-    <!-- ANNOTATIONS SECTION -->
-    <div class="section-label">Annotations</div>
-
-    <!-- MARKER COLORS -->
-    <div class="marker-colors">
-      {#each PALETTE as pc}
-        <button
-          class="color-swatch"
-          class:active={markerColor === pc}
-          style="background:{pc}"
-          on:click={() => (markerColor = pc)}
-        ></button>
-      {/each}
-      <!-- + custom marker color picker -->
-      <div class="plus-color-wrap" title="Custom color">
-        <input
-          type="color"
-          bind:value={customMarkerColor}
-          class="plus-color-input"
-          on:input={() => (markerColor = customMarkerColor)}
-        />
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          class="plus-icon"
-        >
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </div>
-    </div>
-
-    <!-- ANNO TOOLS -->
-    <div class="anno-buttons">
-      <button
-        class="tool-btn"
-        class:enabled={hasImage}
-        class:tool-active={activeTool === "arrow"}
-        disabled={!hasImage}
-        on:click|stopPropagation={() => toggleTool("arrow")}
-        title="Arrow"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><path d="M12 5V19" /><path d="M5 12l7-7 7 7" /></svg
-        >
-      </button>
-      <button
-        class="tool-btn"
-        class:enabled={hasImage}
-        class:tool-active={activeTool === "counter"}
-        disabled={!hasImage}
-        on:click|stopPropagation={() => toggleTool("counter")}
-        title="Counter"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><circle cx="12" cy="12" r="9" /><text
-            x="12"
-            y="12.5"
-            text-anchor="middle"
-            dominant-baseline="middle"
-            fill="currentColor"
-            font-size="11"
-            font-weight="bold"
-            stroke="none">2</text
-          ></svg
-        >
-      </button>
-      <button
-        class="tool-btn"
-        class:enabled={hasImage}
-        class:tool-active={activeTool === "rect"}
-        disabled={!hasImage}
-        on:click|stopPropagation={() => toggleTool("rect")}
-        title="Rectangle"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><rect x="3" y="5" width="18" height="14" rx="3" /></svg
-        >
-      </button>
-      <button
-        class="tool-btn"
-        class:enabled={hasImage}
-        class:tool-active={activeTool === "crop"}
-        disabled={!hasImage}
-        on:click|stopPropagation={() => toggleTool("crop")}
-        title="Crop"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><path d="M6 2v4H2" /><path d="M18 22v-4h4" /><rect
-            x="6"
-            y="6"
-            width="12"
-            height="12"
-          /></svg
-        >
-      </button>
-    </div>
-
-    {#if activeTool === "crop" && cropRect}
-      <div class="crop-actions">
-        <button class="btn crop-apply" on:click|stopPropagation={applyCrop}>
-          <svg
-            class="icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            ><path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M5 13l4 4L19 7"
-            /></svg
+        <div class="anno-buttons">
+          <button
+            class="tool-btn"
+            class:enabled={hasImage}
+            class:tool-active={activeTool === "arrow"}
+            disabled={!hasImage}
+            on:click|stopPropagation={() => toggleTool("arrow")}
+            // title="Arrow"
           >
-          <span>Apply</span>
-        </button>
-        <button
-          class="btn crop-cancel enabled"
-          on:click|stopPropagation={cancelCrop}
-        >
-          <svg
-            class="icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            ><path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M6 18L18 6M6 6l12 12"
-            /></svg
-          >
-          <span>Cancel</span>
-        </button>
-      </div>
-    {/if}
-
-    {#if selectedId != null}
-      <button
-        class="btn delete-btn enabled"
-        on:click|stopPropagation={deleteSelected}
-      >
-        <svg
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-          /></svg
-        >
-        <span>Delete</span>
-      </button>
-    {/if}
-
-    <!-- IMAGE SECTION -->
-    <div class="section-label">Image</div>
-
-    <!-- COMPRESS (inline panel, toggled from actions row) -->
-    {#if showCompressSlider}
-      <div class="compress-panel">
-        <div class="compress-quality-row">
-          <span class="compress-label">Quality</span>
-          <span class="compress-value">{compressQuality}%</span>
-        </div>
-        <input
-          type="range"
-          min="10"
-          max="100"
-          step="5"
-          bind:value={compressQuality}
-          class="quality-slider"
-        />
-        <div class="compress-hint">
-          {#if compressQuality >= 85}Highest quality · larger file{:else if compressQuality >= 50}Balanced
-            quality &amp; size{:else}Smallest file · visible artifacts{/if}
-        </div>
-        <button
-          class="btn compress-apply-btn enabled"
-          class:success={compressState === "success"}
-          class:error={compressState === "error"}
-          on:click|stopPropagation={compressImage}
-        >
-          {#if compressState === "success"}<svg
-              class="icon"
+            <svg
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><path d="M12 5V19" /><path d="M5 12l7-7 7 7" /></svg
+            >
+            <span class="tool-label">Arrow</span>
+          </button>
+          <button
+            class="tool-btn"
+            class:enabled={hasImage}
+            class:tool-active={activeTool === "counter"}
+            disabled={!hasImage}
+            on:click|stopPropagation={() => toggleTool("counter")}
+            title="Step counter"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><circle cx="12" cy="12" r="9" /><text
+                x="12"
+                y="12.5"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill="currentColor"
+                font-size="11"
+                font-weight="bold"
+                stroke="none">2</text
+              ></svg
+            >
+            <span class="tool-label">Count</span>
+          </button>
+          <button
+            class="tool-btn"
+            class:enabled={hasImage}
+            class:tool-active={activeTool === "rect"}
+            disabled={!hasImage}
+            on:click|stopPropagation={() => toggleTool("rect")}
+            title="Draw a rectangle"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><rect x="3" y="5" width="18" height="14" rx="3" /></svg
+            >
+            <span class="tool-label">Box</span>
+          </button>
+          <button
+            class="tool-btn"
+            class:enabled={hasImage}
+            class:tool-active={activeTool === "crop"}
+            disabled={!hasImage}
+            on:click|stopPropagation={() => toggleTool("crop")}
+            // title="Crop"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><path d="M6 2v4H2" /><path d="M18 22v-4h4" /><rect
+                x="6"
+                y="6"
+                width="12"
+                height="12"
+              /></svg
+            >
+            <span class="tool-label">Crop</span>
+          </button>
+        </div>
+        {#if selectedId != null}
+          <button
+            class="btn delete-btn enabled"
+            on:click|stopPropagation={deleteSelected}
+          >
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
               ><path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                d="M5 13l4 4L19 7"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               /></svg
-            ><span>Done</span>
-          {:else if compressState === "error"}<span>Failed</span>
-          {:else}<svg
+            >
+            <span>Delete annotation</span>
+          </button>
+        {/if}
+      </div>
+
+      <!-- MISC -->
+      <div class="section-card">
+        <div class="section-label">Image</div>
+        <div class="misc-row">
+          <button
+            class="btn icon-btn"
+            class:enabled={hasChanges}
+            disabled={!hasChanges}
+            on:click={resetToOriginal}
+            title="Reset to original image"
+          >
+            <svg
               class="icon"
               viewBox="0 0 24 24"
               fill="none"
@@ -1273,56 +1277,65 @@
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              ><polyline points="8 17 12 21 16 17" /><line
-                x1="12"
-                y1="21"
-                x2="12"
-                y2="3"
+              ><path d="M3 7v6h6" /><path
+                d="M21 17a9 9 0 00-9-9 9 9 0 00-6.69 3L3 13"
               /></svg
-            ><span>Apply</span>{/if}
-        </button>
+            >
+            <span>Reset</span>
+          </button>
+          <button
+            class="btn icon-btn trash-btn"
+            class:enabled={hasImage}
+            disabled={!hasImage}
+            on:click|stopPropagation={requestClear}
+            title="Delete everything and restart"
+          >
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              /></svg
+            >
+            <span>Clear</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {#if showScrollHint}
+      <div
+        class="scroll-hint"
+        on:click={() =>
+          sidebarScrollEl.scrollBy({ top: 80, behavior: "smooth" })}
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg
+        >
       </div>
     {/if}
 
-    <!-- ACTIONS -->
-    <div class="actions">
+    <!-- STICKY EXPORT -->
+    <div class="sidebar-actions">
+      <div class="section-label">Export</div>
       <button
-        class="btn copy-btn"
+        class="btn misc-compress-btn"
         class:enabled={hasImage && imgLoaded}
-        class:success={copyState === "success"}
-        class:error={copyState === "error"}
+        class:icon-btn-active={showCompressSlider}
         disabled={!hasImage || !imgLoaded}
-        on:click={copyImage}
-      >
-        {#if copyState === "success"}<svg
-            class="icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            ><path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M5 13l4 4L19 7"
-            /></svg
-          ><span>Copied</span>
-        {:else if copyState === "error"}<span>Failed</span>
-        {:else}<svg
-            class="icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            ><rect x="9" y="9" width="13" height="13" rx="2" /><path
-              d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"
-            /></svg
-          ><span>Copy</span>{/if}
-      </button>
-      <button
-        class="btn"
-        class:enabled={hasImage && imgLoaded}
-        disabled={!hasImage || !imgLoaded}
-        on:click={downloadImage}
+        on:click|stopPropagation={toggleCompressSlider}
       >
         <svg
           class="icon"
@@ -1330,45 +1343,102 @@
           fill="none"
           stroke="currentColor"
           stroke-width="2"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M7 15l5 5 5-5"
-          /></svg
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><line x1="5" y1="12" x2="19" y2="12" /><path
+            d="M12 4v5M9 6l3 3 3-3"
+          /><path d="M12 20v-5M9 18l3-3 3 3" /></svg
         >
-        <span>Download</span>
+        <span>Compress</span>
       </button>
-      <!-- icon-only row: compress toggle + clear -->
-      <div class="actions-secondary">
-        <button
-          class="btn icon-btn"
-          class:enabled={hasImage && imgLoaded}
-          class:icon-btn-active={showCompressSlider}
-          disabled={!hasImage || !imgLoaded}
-          on:click|stopPropagation={toggleCompressSlider}
-          title="Compress"
-        >
-          <svg
-            class="icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+      {#if showCompressSlider}
+        <div class="compress-panel">
+          <div class="compress-quality-row">
+            <span class="compress-label">Quality</span><span
+              class="compress-value">{compressQuality}%</span
+            >
+          </div>
+          <input
+            type="range"
+            min="10"
+            max="100"
+            step="5"
+            bind:value={compressQuality}
+            class="styled-slider"
+          />
+          <div class="compress-hint">
+            {#if compressQuality >= 85}Highest quality · larger file{:else if compressQuality >= 50}Balanced
+              quality &amp; size{:else}Smallest file · visible artifacts{/if}
+          </div>
+          {#if originalFileSize}
+            <div class="compress-sizes">
+              <span>Original: {formatBytes(originalFileSize)}</span
+              >{#if compressedFileSize}<span
+                  >→ {formatBytes(compressedFileSize)}</span
+                >{/if}
+            </div>
+          {/if}
+          <button
+            class="btn compress-apply-btn enabled"
+            class:success={compressState === "success"}
+            class:error={compressState === "error"}
+            on:click|stopPropagation={compressImage}
           >
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <path d="M12 4v5M9 6l3 3 3-3" />
-            <path d="M12 20v-5M9 18l3-3 3 3" />
-          </svg>
-          <span>Compress</span>
+            {#if compressState === "success"}<svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M5 13l4 4L19 7"
+                /></svg
+              ><span>Done</span>
+            {:else if compressState === "error"}<span>Failed</span>
+            {:else}<span>Apply compression</span>{/if}
+          </button>
+        </div>
+      {/if}
+      <div class="export-row">
+        <button
+          class="btn export-btn"
+          class:enabled={hasImage && imgLoaded}
+          class:success={copyState === "success"}
+          class:error={copyState === "error"}
+          disabled={!hasImage || !imgLoaded}
+          on:click={copyImage}
+        >
+          {#if copyState === "success"}<svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M5 13l4 4L19 7"
+              /></svg
+            ><span>Copied</span>
+          {:else if copyState === "error"}<span>Failed</span>
+          {:else}<svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              ><rect x="9" y="9" width="13" height="13" rx="2" /><path
+                d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"
+              /></svg
+            ><span>Copy</span>{/if}
         </button>
         <button
-          class="btn icon-btn"
-          class:enabled={hasImage}
-          disabled={!hasImage}
-          on:click={clearImage}
-          title="Clear"
+          class="btn export-btn"
+          class:enabled={hasImage && imgLoaded}
+          disabled={!hasImage || !imgLoaded}
+          on:click={downloadImage}
         >
           <svg
             class="icon"
@@ -1379,14 +1449,13 @@
             ><path
               stroke-linecap="round"
               stroke-linejoin="round"
-              d="M6 18L18 6M6 6l12 12"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M7 15l5 5 5-5"
             /></svg
           >
-          <span>Clear</span>
+          <span>Download</span>
         </button>
       </div>
     </div>
-
     <input
       bind:this={fileInput}
       type="file"
@@ -1401,11 +1470,22 @@
   <div class="main-area">
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="canvas-area" on:click={onCanvasBgClick}>
+    <div
+      class="canvas-area"
+      class:drag-over={isDraggingOver}
+      on:click={onCanvasBgClick}
+      on:dragover={handleDragOver}
+      on:dragleave={handleDragLeave}
+      on:drop={handleDrop}
+    >
       {#if !hasImage}
-        <div class="prompt">
-          <div class="prompt-title">Paste an image</div>
-          <div class="prompt-sub">Press <kbd>⌘V</kbd> anywhere</div>
+        <div class="prompt" class:drag-highlight={isDraggingOver}>
+          <div class="prompt-title">Beautify your screenshots</div>
+          <div class="prompt-sub">
+            Press <kbd
+              >{navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+V</kbd
+            > to paste an image from your clipboard or drag &amp; drop
+          </div>
           <div class="prompt-or">or</div>
           <button class="upload-btn" on:click={() => fileInput.click()}>
             <svg
@@ -1433,14 +1513,11 @@
             style="padding:{borderSize}px; background:{wrapperBg}; position:relative"
             on:click={onWrapperClick}
           >
-            {#if windowEnabled}
-              <div class="window-chrome">
+            {#if windowEnabled}<div class="window-chrome">
                 <div class="wdot red"></div>
                 <div class="wdot yellow"></div>
                 <div class="wdot green"></div>
-              </div>
-            {/if}
-
+              </div>{/if}
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div
               style="position:relative"
@@ -1457,10 +1534,13 @@
                 class:tool-cursor={activeTool != null}
                 style="border-radius:{windowEnabled
                   ? '0'
-                  : borderRadius + 'px'}"
+                  : borderRadius +
+                    'px'}; max-width:calc(100vw - 20rem - {borderSize * 2 +
+                  48}px); max-height:calc(100vh - {borderSize * 2 +
+                  (windowEnabled ? CHROME_H : 0) +
+                  96}px)"
                 on:load={onImgLoad}
               />
-
               {#if activeTool === "crop" && displayCrop}
                 {@const c = displayCrop}
                 <div class="crop-overlay">
@@ -1530,24 +1610,22 @@
                   </div>
                 </div>
               {/if}
-
               <svg class="annotation-svg">
-                <defs>
-                  <filter
+                <defs
+                  ><filter
                     id="pin-shadow"
                     x="-50%"
                     y="-50%"
                     width="200%"
                     height="200%"
-                  >
-                    <feDropShadow
+                    ><feDropShadow
                       dx="0"
                       dy="1.5"
                       stdDeviation="2"
                       flood-color="rgba(0,0,0,0.35)"
-                    />
-                  </filter>
-                </defs>
+                    /></filter
+                  ></defs
+                >
                 {#each annotations as a (a.id)}
                   {@const off = {
                     x: -borderSize,
@@ -1668,14 +1746,102 @@
             </div>
           </div>
         </div>
+        {#if activeTool === "crop" && cropRect}
+          <div class="crop-float-actions">
+            <button
+              class="crop-float-btn crop-float-apply"
+              on:click|stopPropagation={applyCrop}
+            >
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M5 13l4 4L19 7"
+                /></svg
+              >
+              Apply crop
+            </button>
+            <button
+              class="crop-float-btn crop-float-cancel"
+              on:click|stopPropagation={cancelCropAction}
+            >
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                /></svg
+              >
+              Cancel
+            </button>
+            <span class="crop-float-hint">or Enter / Esc</span>
+          </div>
+        {/if}
       {/if}
     </div>
 
     <div class="footer-divider"></div>
     <footer class="footer">
-      <p>Built with Svelte & Vite by KJ</p>
+      <p>Built with Svelte &amp; Vite by KJ</p>
     </footer>
   </div>
+
+  {#if showClearConfirm}
+    <div class="confirm-overlay">
+      <div class="confirm-dialog">
+        <div class="confirm-icon">
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fca5a5"
+            stroke-width="1.5"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+            /></svg
+          >
+        </div>
+        <div class="confirm-title">Clear image?</div>
+        <div class="confirm-text">
+          This will remove your image and all annotations.
+        </div>
+        <div class="confirm-buttons">
+          <button class="confirm-cancel-btn" on:click={cancelClear}
+            >Cancel</button
+          >
+          <button class="confirm-delete-btn" on:click={confirmClear}>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              /></svg
+            >
+            Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1686,7 +1852,6 @@
       -apple-system,
       sans-serif;
   }
-
   .app {
     display: flex;
     height: 100vh;
@@ -1697,23 +1862,129 @@
 
   .sidebar {
     flex-shrink: 0;
-    width: 14rem;
+    width: 15rem;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.1rem;
-    padding: 1.25rem;
-    overflow-y: auto;
     height: 100vh;
+    border-right: 1px solid #1a1a1e;
+  }
+  .sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 2px;
+  }
+
+  .section-card {
+    background: #0f0f12;
+    border: 1px solid #1e1e22;
+    border-radius: 0.625rem;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .export-row {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .export-btn {
+    flex: 1;
+  }
+  .export-btn.enabled {
+    background: #f4f4f5 !important;
+    color: #18181b !important;
+    border-color: transparent !important;
+  }
+  .export-btn.enabled:hover {
+    background: #fff !important;
+  }
+  .export-btn.success {
+    background: #059669 !important;
+    color: white !important;
+    border-color: #059669 !important;
+  }
+  .export-btn.error {
+    background: #dc2626 !important;
+    color: white !important;
+    border-color: #dc2626 !important;
+  }
+  .misc-row {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .misc-compress-btn {
+    width: 100%;
+  }
+  .misc-compress-btn.icon-btn-active.enabled {
+    background: #27272a !important;
+    border-color: #52525b !important;
+    color: #d4d4d8 !important;
+  }
+  .compress-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: #111113;
+    border: 1px solid #27272a;
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .sidebar-actions {
+    flex-shrink: 0;
+    padding: 0.75rem 0.75rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-top: 1px solid #1e1e22;
+    background: #0c0c0e;
+  }
+
+  .scroll-hint {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0.35rem 0;
+    color: #71717a;
+    cursor: pointer;
+    animation: scroll-pulse 1.8s ease-in-out infinite;
+  }
+  .scroll-hint:hover {
+    color: #a1a1aa;
+  }
+  @keyframes scroll-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(3px);
+    }
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.3rem;
     width: 100%;
     transition: opacity 0.2s;
+  }
+  .field-col {
+    flex-direction: column;
   }
   .field-inline {
     flex-direction: row;
@@ -1724,21 +1995,19 @@
     opacity: 0.35;
     pointer-events: none;
   }
-
   .label {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
     color: #71717a;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-
   .section-label {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.65rem;
+    gap: 0.4rem;
+    font-size: 0.6rem;
     font-weight: 600;
     color: #52525b;
     text-transform: uppercase;
@@ -1751,99 +2020,143 @@
     background: #27272a;
   }
 
-  .select-wrap {
-    position: relative;
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
-  .select-wrap select {
+  .slider-value {
+    font-size: 0.7rem;
+    color: #a1a1aa;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .styled-slider {
     width: 100%;
-    background: #18181b;
-    border: 1px solid #27272a;
-    color: #d4d4d8;
-    font-size: 0.875rem;
-    border-radius: 0.5rem;
-    padding: 0.375rem 2rem 0.375rem 0.75rem;
-    appearance: none;
+    height: 4px;
     -webkit-appearance: none;
+    appearance: none;
+    background: #27272a;
+    border-radius: 2px;
     outline: none;
     cursor: pointer;
   }
-  .select-wrap select:disabled {
+  .styled-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #d4d4d8;
+    border: 2px solid #09090b;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  .styled-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #d4d4d8;
+    border: 2px solid #09090b;
+    cursor: pointer;
+  }
+  .styled-slider:disabled {
+    opacity: 0.3;
     cursor: not-allowed;
   }
-  .select-wrap select:focus {
-    border-color: #52525b;
+
+  .window-label-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
-  .chevron {
-    position: absolute;
-    right: 0.5rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 1rem;
-    height: 1rem;
-    color: #a1a1aa;
-    pointer-events: none;
+  .window-dots-hint {
+    display: flex;
+    gap: 3px;
+    align-items: center;
   }
-  .select-wrap-sm select {
-    padding: 0.3rem 1.75rem 0.3rem 0.6rem;
-    font-size: 0.8rem;
+  .hint-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    opacity: 0.6;
   }
 
-  /* BG TABS */
+  .toggle {
+    position: relative;
+    width: 2.25rem;
+    height: 1.15rem;
+    border-radius: 9999px;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    cursor: pointer;
+    transition: background 0.2s;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .toggle.on {
+    background: #059669;
+  }
+  .toggle-dot {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 9999px;
+    background: #71717a;
+    transition: all 0.2s;
+  }
+  .toggle-dot.on {
+    left: 1.1rem;
+    background: white;
+  }
 
   .bg-tabs {
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
-
   .tab-row {
     display: flex;
     background: #18181b;
     border: 1px solid #27272a;
-    border-radius: 0.5rem;
-    padding: 3px;
+    border-radius: 0.4rem;
+    padding: 2px;
     gap: 2px;
   }
-
   .tab-btn {
     flex: 1;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
-    padding: 0.3rem 0;
-    border-radius: 0.35rem;
+    padding: 0.25rem 0;
+    border-radius: 0.3rem;
     border: none;
     background: transparent;
     color: #52525b;
     cursor: pointer;
     transition: all 0.15s;
   }
-
   .tab-btn:hover {
     color: #a1a1aa;
   }
-
   .tab-btn.tab-active {
     background: #27272a;
     color: #f4f4f5;
   }
 
-  /* SOLID PANEL */
-
   .solid-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
-
   .solid-swatches {
     display: flex;
     flex-wrap: wrap;
     gap: 0.3rem;
     align-items: center;
   }
-
   .color-swatch {
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 0.3rem;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 0.25rem;
     border: 2px solid transparent;
     cursor: pointer;
     transition:
@@ -1858,11 +2171,10 @@
     border-color: white;
   }
 
-  /* + color picker button */
-  .plus-color-wrap {
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 0.3rem;
+  .custom-color-wrap {
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 0.25rem;
     border: 1.5px dashed #52525b;
     cursor: pointer;
     position: relative;
@@ -1876,12 +2188,11 @@
     flex-shrink: 0;
     background: #18181b;
   }
-  .plus-color-wrap:hover {
+  .custom-color-wrap:hover {
     border-color: #a1a1aa;
     transform: scale(1.12);
   }
-
-  .plus-color-input {
+  .custom-color-input {
     position: absolute;
     inset: -6px;
     width: calc(100% + 12px);
@@ -1891,32 +2202,27 @@
     border: none;
     padding: 0;
   }
-
-  .plus-icon {
-    width: 0.75rem;
-    height: 0.75rem;
+  .picker-icon {
+    width: 0.7rem;
+    height: 0.7rem;
     color: #71717a;
     pointer-events: none;
     flex-shrink: 0;
   }
 
-  /* GRADIENT PANEL */
-
   .gradient-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
-
   .gradient-swatches {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.35rem;
+    gap: 0.3rem;
   }
-
   .grad-swatch {
-    height: 2.25rem;
-    border-radius: 0.4rem;
+    height: 2rem;
+    border-radius: 0.35rem;
     border: 2px solid transparent;
     cursor: pointer;
     transition:
@@ -1930,18 +2236,16 @@
     border-color: white;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
   }
-
   .custom-grad-section {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
-
   .custom-grad-toggle {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
-    padding: 0.3rem 0.75rem;
-    border-radius: 0.4rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 0.35rem;
     border: 1px dashed #3f3f46;
     background: transparent;
     color: #71717a;
@@ -1960,23 +2264,20 @@
     color: #d4d4d8;
     background: #1c1c20;
   }
-
   .custom-grad-pickers {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
-
   .custom-grad-picker-wrap {
     flex: 1;
-    height: 2rem;
-    border-radius: 0.4rem;
+    height: 1.75rem;
+    border-radius: 0.35rem;
     overflow: hidden;
     position: relative;
     cursor: pointer;
     border: 1px solid #3f3f46;
   }
-
   .grad-color-input {
     position: absolute;
     inset: -4px;
@@ -1987,97 +2288,58 @@
     border: none;
     padding: 0;
   }
-
   .grad-color-preview {
     width: 100%;
     height: 100%;
     pointer-events: none;
   }
-
   .custom-grad-arrow {
     color: #52525b;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     flex-shrink: 0;
   }
-
   .custom-grad-preview {
-    height: 2.5rem;
-    border-radius: 0.4rem;
+    height: 2rem;
+    border-radius: 0.35rem;
     border: 1px solid #27272a;
-  }
-
-  /* TOGGLE */
-  .toggle {
-    position: relative;
-    width: 2.5rem;
-    height: 1.25rem;
-    border-radius: 9999px;
-    background: #27272a;
-    border: 1px solid #3f3f46;
-    cursor: pointer;
-    transition: background 0.2s;
-    align-self: flex-start;
-    padding: 0;
-    flex-shrink: 0;
-  }
-  .toggle.on {
-    background: #059669;
-  }
-  .toggle-dot {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 1rem;
-    height: 1rem;
-    border-radius: 9999px;
-    background: #71717a;
-    transition: all 0.2s;
-  }
-  .toggle-dot.on {
-    left: 1.25rem;
-    background: white;
-  }
-
-  .divider {
-    height: 1px;
-    background: #27272a;
-    width: 100%;
   }
 
   .marker-colors {
     display: flex;
-    gap: 0.35rem;
+    gap: 0.3rem;
     align-items: center;
     width: 100%;
   }
-
   .anno-buttons {
     display: flex;
-    gap: 0.35rem;
+    gap: 0.25rem;
     width: 100%;
   }
-
   .tool-btn {
     flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 2.25rem;
-    border-radius: 0.5rem;
+    gap: 0.15rem;
+    height: 2.75rem;
+    border-radius: 0.4rem;
     border: 1px solid #27272a;
     background: #18181b;
     color: #52525b;
     cursor: not-allowed;
     transition: all 0.15s;
+    padding: 0.25rem 0;
   }
   .tool-btn.enabled {
-    background: #27272a;
-    color: #d4d4d8;
-    border-color: #3f3f46;
+    background: #1e1e22;
+    color: #a1a1aa;
+    border-color: #2a2a2e;
     cursor: pointer;
   }
   .tool-btn.enabled:hover {
-    background: #3f3f46;
+    background: #27272a;
+    color: #d4d4d8;
   }
   .tool-btn.tool-active {
     background: #3f3f46 !important;
@@ -2085,72 +2347,61 @@
     color: white !important;
     cursor: pointer !important;
   }
-  .tool-btn.tool-active:hover {
-    background: #52525b !important;
+  .tool-label {
+    font-size: 0.55rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
-  .crop-actions {
-    display: flex;
-    gap: 0.35rem;
-    width: 100%;
-  }
-  .crop-apply {
-    flex: 1;
-    background: #059669 !important;
-    border-color: #10b981 !important;
-    color: white !important;
+  .delete-btn {
+    background: #7f1d1d !important;
+    border-color: #991b1b !important;
+    color: #fca5a5 !important;
     cursor: pointer !important;
+    width: 100%;
+    font-size: 0.75rem !important;
   }
-  .crop-apply:hover {
-    background: #047857 !important;
-  }
-  .crop-cancel {
-    flex: 1;
+  .delete-btn:hover {
+    background: #991b1b !important;
   }
 
-  /* COMPRESS */
-  .compress-panel {
-    width: 100%;
-    background: #111113;
-    border: 1px solid #27272a;
-    border-radius: 0.5rem;
-    padding: 0.65rem 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
   .compress-quality-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
   .compress-label {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 500;
     color: #71717a;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .compress-value {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: #a1a1aa;
     font-variant-numeric: tabular-nums;
   }
-  .quality-slider {
-    width: 100%;
-    accent-color: #52525b;
-    cursor: pointer;
-  }
   .compress-hint {
-    font-size: 0.68rem;
+    font-size: 0.6rem;
     color: #52525b;
     text-align: center;
   }
+  .compress-sizes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    font-size: 0.65rem;
+    color: #71717a;
+    font-variant-numeric: tabular-nums;
+  }
   .compress-apply-btn {
     width: 100%;
-    font-size: 0.8rem !important;
-    padding: 0.3rem 0.75rem !important;
+    font-size: 0.75rem !important;
+    padding: 0.25rem 0.6rem !important;
   }
   .compress-apply-btn.success {
     background: #059669 !important;
@@ -2163,39 +2414,15 @@
     color: white !important;
   }
 
-  .actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-  }
-
-  .actions-secondary {
-    display: flex;
-    gap: 0.35rem;
-    width: 100%;
-  }
-  .icon-btn {
-    flex: 1;
-    font-size: 0.75rem !important;
-    padding: 0.3rem 0.5rem !important;
-    gap: 0.25rem !important;
-  }
-  .icon-btn.icon-btn-active.enabled {
-    background: #27272a !important;
-    border-color: #52525b !important;
-    color: #d4d4d8 !important;
-  }
-
   .btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    font-size: 0.875rem;
+    gap: 0.3rem;
+    font-size: 0.8rem;
     font-weight: 500;
-    padding: 0.375rem 1rem;
-    border-radius: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.4rem;
     border: 1px solid #27272a;
     background: #18181b;
     color: #52525b;
@@ -2211,49 +2438,36 @@
   .btn.enabled:hover {
     background: #3f3f46;
   }
-
-  .copy-btn.enabled {
-    background: #f4f4f5;
-    color: #18181b;
-    border-color: transparent;
+  .icon-btn {
+    flex: 1;
+    font-size: 0.65rem !important;
+    padding: 0.25rem 0.35rem !important;
+    gap: 0.2rem !important;
   }
-  .copy-btn.enabled:hover {
-    background: #fff;
+  .icon-btn.icon-btn-active.enabled {
+    background: #27272a !important;
+    border-color: #52525b !important;
+    color: #d4d4d8 !important;
   }
-  .copy-btn.success {
-    background: #059669 !important;
-    color: white !important;
-    border-color: #059669 !important;
-  }
-  .copy-btn.error {
-    background: #dc2626 !important;
-    color: white !important;
-    border-color: #dc2626 !important;
-  }
-
-  .delete-btn {
-    background: #7f1d1d !important;
-    border-color: #991b1b !important;
+  .trash-btn.enabled {
+    background: #2a1215 !important;
+    border-color: #7f1d1d !important;
     color: #fca5a5 !important;
-    cursor: pointer !important;
-    width: 100%;
   }
-  .delete-btn:hover {
-    background: #991b1b !important;
+  .trash-btn.enabled:hover {
+    background: #3b1219 !important;
   }
-
   .icon {
-    width: 1rem;
-    height: 1rem;
+    width: 0.9rem;
+    height: 0.9rem;
     flex-shrink: 0;
   }
   .hidden-input {
     display: none;
   }
-
   .vdivider {
     width: 1px;
-    background: #27272a;
+    background: #1a1a1e;
     flex-shrink: 0;
     height: 100vh;
   }
@@ -2264,8 +2478,8 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    position: relative;
   }
-
   .canvas-area {
     flex: 1;
     display: flex;
@@ -2275,13 +2489,25 @@
     min-width: 0;
     padding: 1.5rem;
     overflow: hidden;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .canvas-area.drag-over {
+    background: rgba(59, 130, 246, 0.05);
   }
 
   .prompt {
     border: 2px dashed #27272a;
     border-radius: 1rem;
-    padding: 5rem 4rem;
+    padding: 3rem 4rem;
     text-align: center;
+    transition:
+      border-color 0.2s,
+      background 0.2s;
+  }
+  .prompt.drag-highlight {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
   }
   .prompt-title {
     color: #a1a1aa;
@@ -2291,31 +2517,30 @@
   }
   .prompt-sub {
     color: #52525b;
-    font-size: 0.875rem;
-    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
   }
   .prompt-sub kbd {
-    padding: 0.125rem 0.375rem;
+    padding: 0.1rem 0.3rem;
     background: #27272a;
-    border-radius: 0.25rem;
+    border-radius: 0.2rem;
     color: #a1a1aa;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-family: monospace;
   }
   .prompt-or {
     color: #52525b;
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
   }
-
   .upload-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.875rem;
+    gap: 0.3rem;
+    font-size: 0.8rem;
     font-weight: 500;
-    padding: 0.375rem 1rem;
-    border-radius: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 0.4rem;
     background: #27272a;
     color: #d4d4d8;
     border: 1px solid #3f3f46;
@@ -2324,6 +2549,22 @@
   }
   .upload-btn:hover {
     background: #3f3f46;
+  }
+
+  .footer-divider {
+    height: 1px;
+    background: #1a1a1e;
+    flex-shrink: 0;
+  }
+  .footer {
+    flex-shrink: 0;
+    text-align: right;
+    padding: 0.6rem 1.25rem;
+  }
+  .footer p {
+    color: #52525b;
+    font-size: 0.75rem;
+    margin: 0;
   }
 
   .output {
@@ -2336,7 +2577,6 @@
     max-width: 100%;
     overflow: auto;
   }
-
   .wrapper {
     display: inline-block;
     flex-shrink: 0;
@@ -2344,7 +2584,6 @@
   .tool-cursor {
     cursor: crosshair !important;
   }
-
   .window-chrome {
     background: #2a2a2e;
     border-radius: 10px 10px 0 0;
@@ -2367,16 +2606,12 @@
   .wdot.green {
     background: #28c840;
   }
-
   .preview-img {
     display: block;
     object-fit: contain;
-    max-width: calc(100vw - 20rem);
-    max-height: calc(100vh - 12rem);
     user-select: none;
     -webkit-user-drag: none;
   }
-
   .annotation-svg {
     position: absolute;
     top: 0;
@@ -2480,19 +2715,123 @@
     cursor: e-resize;
   }
 
-  .footer-divider {
-    height: 1px;
-    background: #27272a;
-    flex-shrink: 0;
+  .crop-float-actions {
+    position: absolute;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.6rem;
+    padding: 0.4rem 0.6rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 20;
   }
-  .footer {
-    flex-shrink: 0;
-    text-align: right;
-    padding: 0.6rem 1.25rem;
-  }
-  .footer p {
-    color: #52525b;
+  .crop-float-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
     font-size: 0.75rem;
-    margin: 0;
+    font-weight: 500;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.35rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .crop-float-apply {
+    background: #059669;
+    color: white;
+  }
+  .crop-float-apply:hover {
+    background: #047857;
+  }
+  .crop-float-cancel {
+    background: #27272a;
+    color: #d4d4d8;
+  }
+  .crop-float-cancel:hover {
+    background: #3f3f46;
+  }
+  .crop-float-hint {
+    font-size: 0.6rem;
+    color: #52525b;
+    margin-left: 0.25rem;
+  }
+
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .confirm-dialog {
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    max-width: 20rem;
+    text-align: center;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  }
+  .confirm-icon {
+    margin-bottom: 0.75rem;
+  }
+  .confirm-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f4f4f5;
+    margin-bottom: 0.35rem;
+  }
+  .confirm-text {
+    font-size: 0.8rem;
+    color: #71717a;
+    margin-bottom: 1.25rem;
+    line-height: 1.4;
+  }
+  .confirm-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .confirm-cancel-btn {
+    flex: 1;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.4rem;
+    border: 1px solid #3f3f46;
+    background: #27272a;
+    color: #d4d4d8;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .confirm-cancel-btn:hover {
+    background: #3f3f46;
+  }
+  .confirm-delete-btn {
+    flex: 1;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.4rem;
+    border: 1px solid #991b1b;
+    background: #7f1d1d;
+    color: #fca5a5;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+  }
+  .confirm-delete-btn:hover {
+    background: #991b1b;
   }
 </style>
