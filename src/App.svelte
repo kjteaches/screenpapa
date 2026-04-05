@@ -112,8 +112,9 @@
   const CHROME_DOT_LEFT = 16;
   const CHROME_CORNER = 10;
 
-  const PALETTE = ["#ef4444", "#f97316", "#3b82f6", "#22c55e", "#a855f7"];
-  let markerColor = "#ef4444";
+  const PALETTE = ["#f97316", "#ef4444", "#3b82f6", "#22c55e", "#a855f7"];
+  let markerColor = "#f97316";
+
   let customMarkerColor = "#ff00ff";
 
   const PIN_R = 16;
