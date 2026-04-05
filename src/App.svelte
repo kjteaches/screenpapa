@@ -73,6 +73,9 @@
   // state: drag-and-drop
   let isDraggingOver = false;
 
+  // state: sidebar visibility (mobile)
+  let sidebarOpen = false;
+
   // state: sidebar scroll indicator
   let sidebarScrollEl;
   let showScrollHint = false;
@@ -916,7 +919,7 @@
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="app" on:click={onAppClick}>
-  <div class="sidebar">
+  <div class="sidebar" class:sidebar-open={sidebarOpen}>
     <div
       class="sidebar-scroll"
       bind:this={sidebarScrollEl}
@@ -1469,6 +1472,41 @@
   <div class="vdivider"></div>
 
   <div class="main-area">
+    <button
+      class="sidebar-toggle"
+      on:click={() => (sidebarOpen = !sidebarOpen)}
+      aria-label="Toggle sidebar"
+    >
+      {#if sidebarOpen}
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg
+        >
+      {:else}
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18" /></svg
+        >
+      {/if}
+    </button>
+    {#if sidebarOpen}
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="sidebar-backdrop"
+        on:click={() => (sidebarOpen = false)}
+      ></div>
+    {/if}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
@@ -1536,7 +1574,8 @@
                 style="border-radius:{windowEnabled
                   ? '0'
                   : borderRadius +
-                    'px'}; max-width:calc(100vw - 20rem - {borderSize * 2 +
+                    'px'}; max-width:calc(var(--canvas-w, 100vw - 17rem) - {borderSize *
+                  2 +
                   48}px); max-height:calc(100vh - {borderSize * 2 +
                   (windowEnabled ? CHROME_H : 0) +
                   96}px)"
@@ -1868,6 +1907,8 @@
     flex-direction: column;
     height: 100vh;
     border-right: 1px solid #1a1a1e;
+    z-index: 50;
+    transition: transform 0.25s ease;
   }
   .sidebar-scroll {
     flex: 1;
@@ -1875,8 +1916,12 @@
     padding: 0.75rem 0.75rem 1rem;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     gap: 0.5rem;
+  }
+  .sidebar-scroll::before,
+  .sidebar-scroll::after {
+    content: "";
+    flex: 1;
   }
   .sidebar-scroll::-webkit-scrollbar {
     width: 4px;
@@ -2470,7 +2515,6 @@
     width: 1px;
     background: #1a1a1e;
     flex-shrink: 0;
-    height: 100vh;
   }
 
   .main-area {
@@ -2482,6 +2526,7 @@
     position: relative;
   }
   .canvas-area {
+    --canvas-w: 100vw - 17rem;
     flex: 1;
     display: flex;
     align-items: center;
@@ -2834,5 +2879,127 @@
   }
   .confirm-delete-btn:hover {
     background: #991b1b;
+  }
+
+  /* ─── MOBILE TOGGLE & BACKDROP ─── */
+  .sidebar-toggle {
+    display: none;
+  }
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  /* ─── RESPONSIVE: mid screens ── */
+  @media (max-width: 960px) {
+    .sidebar {
+      width: 13.5rem;
+    }
+    .canvas-area {
+      --canvas-w: 100vw - 15rem;
+      padding: 1rem;
+    }
+    .prompt {
+      padding: 2rem 2.5rem;
+    }
+  }
+
+  /* ─── RESPONSIVE: narrow ─────── */
+  @media (max-width: 720px) {
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 16rem;
+      transform: translateX(-100%);
+      background: #09090b;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    }
+    .sidebar.sidebar-open {
+      transform: translateX(0);
+    }
+    .vdivider {
+      display: none;
+    }
+    .sidebar-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      top: 0.6rem;
+      left: 0.6rem;
+      z-index: 60;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      background: #18181b;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .sidebar-toggle:hover {
+      background: #27272a;
+    }
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(2px);
+    }
+    .canvas-area {
+      --canvas-w: 100vw;
+      padding: 0.75rem;
+      padding-top: 3rem;
+    }
+    .main-area {
+      height: 100vh;
+    }
+    .prompt {
+      padding: 2rem 1.5rem;
+    }
+    .prompt-title {
+      font-size: 1rem;
+    }
+    .crop-float-actions {
+      bottom: 0.75rem;
+      padding: 0.35rem 0.5rem;
+    }
+    .footer {
+      padding: 0.4rem 0.75rem;
+    }
+    .footer p {
+      font-size: 0.65rem;
+    }
+  }
+
+  /* ─── RESPONSIVE: very narrow ── */
+  @media (max-width: 480px) {
+    .sidebar {
+      width: 14rem;
+    }
+    .section-card {
+      padding: 0.6rem;
+      gap: 0.5rem;
+    }
+    .sidebar-scroll {
+      padding: 0.5rem;
+      gap: 0.4rem;
+    }
+    .sidebar-actions {
+      padding: 0.5rem 0.5rem 1rem;
+    }
+    .tool-btn {
+      height: 2.5rem;
+    }
+    .canvas-area {
+      padding: 0.5rem;
+      padding-top: 2.75rem;
+    }
+    .prompt {
+      padding: 1.5rem 1rem;
+    }
   }
 </style>
