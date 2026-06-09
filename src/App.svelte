@@ -1,28 +1,22 @@
 <script>
   import { onMount, tick } from "svelte";
 
-  // state: image
   let imgEl;
   let imgSrc = "";
   let imgLoaded = false;
   let fileInput;
   let wrapperEl;
 
-  // state: undo (reset to original)
   let originalBlob = null;
 
-  // state: border/frame settings
   let borderSize = 32;
   let borderRadius = 16;
   let windowEnabled = false;
 
-  // state: background mode — 'solid' | 'gradient'
   let bgMode = "solid";
 
-  // solid color
   let borderColor = "f4f5f6";
 
-  // gradient
   const PRESET_GRADIENTS = [
     { id: "g1", name: "Dusk", colors: ["#f9a8d4", "#c084fc", "#818cf8"] },
     { id: "g2", name: "Ocean", colors: ["#67e8f9", "#38bdf8", "#6366f1"] },
@@ -36,47 +30,37 @@
   let customGradientB = "#3b82f6";
   let useCustomGradient = false;
 
-  // state: copy button feedback
   let copyState = "idle";
 
-  // state: compress
   let compressQuality = 80;
   let showCompressSlider = false;
   let compressState = "idle";
   let originalFileSize = null;
   let compressedFileSize = null;
 
-  // state: annotations
   let annotations = [];
   let nextCounterId = 1;
   let selectedId = null;
   let activeTool = null;
 
-  // state: dragging annotations
   let dragging = null;
   let dragOffset = { x: 0, y: 0 };
 
-  // state: drawing rectangles
   let rectStart = null;
   let rectPreview = null;
 
-  // state: crop
   let cropStart = null;
   let cropPreview = null;
   let cropRect = null;
   let cropDragging = null;
   let cropDragStart = null;
 
-  // state: clear confirmation
   let showClearConfirm = false;
 
-  // state: drag-and-drop
   let isDraggingOver = false;
 
-  // state: sidebar visibility (mobile)
   let sidebarOpen = false;
 
-  // state: sidebar scroll indicator
   let sidebarScrollEl;
   let showScrollHint = false;
 
@@ -96,12 +80,10 @@
     return () => window.removeEventListener("resize", checkScrollHint);
   });
 
-  // re-check when compress panel toggles
   $: if (showCompressSlider !== undefined) {
     tick().then(checkScrollHint);
   }
 
-  // constants
   const BORDER_MIN = 0;
   const BORDER_MAX = 128;
   const RADIUS_MIN = 0;
@@ -184,7 +166,6 @@
     return { x: borderSize, y: borderSize + (windowEnabled ? CHROME_H : 0) };
   }
 
-  // UNDO (reset to original)
   function storeOriginal(blob) {
     originalBlob = blob;
   }
@@ -214,7 +195,6 @@
 
   $: hasChanges = hasImage && originalBlob && imgLoaded;
 
-  // IMAGE LOADING
   function loadBlob(blob) {
     if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
     imgLoaded = false;
@@ -251,7 +231,6 @@
     fileInput.value = "";
   }
 
-  // DRAG AND DROP
   function handleDragOver(e) {
     e.preventDefault();
     isDraggingOver = true;
@@ -268,7 +247,6 @@
     }
   }
 
-  // CLEAR
   function requestClear() {
     showClearConfirm = true;
   }
@@ -294,7 +272,6 @@
     showClearConfirm = false;
   }
 
-  // TOOL SELECTION
   function toggleTool(tool) {
     activeTool = activeTool === tool ? null : tool;
     selectedId = null;
@@ -307,7 +284,6 @@
     }
   }
 
-  // PLACING ANNOTATIONS
   function onImageAreaClick(e) {
     if (!activeTool || activeTool === "rect" || activeTool === "crop") return;
     if (dragging) return;
@@ -331,7 +307,6 @@
     if (activeTool === "arrow") activeTool = null;
   }
 
-  // DRAWING RECTANGLES
   function onImageAreaMouseDown(e) {
     if (activeTool === "rect") {
       if (e.target.closest(".anno-hit")) return;
@@ -424,7 +399,6 @@
     }
   }
 
-  // CROP HANDLE DRAGGING
   function getImgRelPos(e) {
     const rect = imgEl.getBoundingClientRect();
     return {
@@ -528,7 +502,6 @@
     cropDragStart = null;
   }
 
-  // APPLY CROP
   function applyCrop() {
     if (!cropRect || !imgEl || !imgLoaded) return;
     const dispW = imgEl.getBoundingClientRect().width,
@@ -564,7 +537,6 @@
     activeTool = null;
   }
 
-  // COMPRESS
   function toggleCompressSlider() {
     showCompressSlider = !showCompressSlider;
     compressedFileSize = null;
@@ -605,7 +577,6 @@
     );
   }
 
-  // ANNOTATION DRAGGING
   function getRelPos(e) {
     const rect = wrapperEl.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -631,7 +602,6 @@
     selectedId = null;
   }
 
-  // KEYBOARD
   function handleKeydown(e) {
     if (e.key === "Escape") {
       if (showClearConfirm) {
@@ -668,7 +638,6 @@
     }
   }
 
-  // CLICK-AWAY
   function onAppClick(e) {
     if (showClearConfirm && !e.target.closest(".confirm-dialog")) {
       showClearConfirm = false;
@@ -706,7 +675,6 @@
     selectedId = null;
   }
 
-  // EXPORT
   function drawBgToCanvas(ctx, w, h) {
     if (bgMode === "gradient") {
       const colors = useCustomGradient
@@ -925,7 +893,6 @@
       bind:this={sidebarScrollEl}
       on:scroll={onSidebarScroll}
     >
-      <!-- BORDER -->
       <div class="section-card">
         <div class="section-label">Border</div>
         <div class="field field-col">
@@ -982,7 +949,6 @@
         </div>
       </div>
 
-      <!-- BACKGROUND -->
       <div class="section-card">
         <div class="section-label">Background</div>
         <div class="bg-tabs field">
@@ -1111,7 +1077,6 @@
         </div>
       </div>
 
-      <!-- ANNOTATIONS -->
       <div class="section-card">
         <div class="section-label">Annotations</div>
         <div class="marker-colors">
@@ -1147,7 +1112,6 @@
             class:tool-active={activeTool === "arrow"}
             disabled={!hasImage}
             on:click|stopPropagation={() => toggleTool("arrow")}
-            // title="Arrow"
           >
             <svg
               width="16"
@@ -1219,7 +1183,6 @@
             class:tool-active={activeTool === "crop"}
             disabled={!hasImage}
             on:click|stopPropagation={() => toggleTool("crop")}
-            // title="Crop"
           >
             <svg
               width="16"
@@ -1262,7 +1225,6 @@
         {/if}
       </div>
 
-      <!-- MISC -->
       <div class="section-card">
         <div class="section-label">Image</div>
         <div class="misc-row">
@@ -1331,7 +1293,6 @@
       </div>
     {/if}
 
-    <!-- STICKY EXPORT -->
     <div class="sidebar-actions">
       <div class="section-label">Export</div>
       <button
@@ -1887,16 +1848,25 @@
 <style>
   :global(body) {
     margin: 0;
+    background: #18191a;
     font-family:
       system-ui,
       -apple-system,
       sans-serif;
   }
   .app {
+    --fb-bg: #18191a;
+    --fb-card: #242526;
+    --fb-card-hover: #3a3b3c;
+    --fb-border: #3e4042;
+    --fb-text: #e4e6eb;
+    --fb-muted: #b0b3b8;
+    --fb-dim: #8a8d91;
+    --fb-blue: #2374e1;
     display: flex;
     height: 100vh;
-    background: #09090b;
-    color: #d4d4d8;
+    background: var(--fb-bg);
+    color: var(--fb-text);
     overflow: hidden;
   }
 
@@ -1906,7 +1876,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    border-right: 1px solid #1a1a1e;
+    border-right: 1px solid var(--fb-border);
     z-index: 50;
     transition: transform 0.25s ease;
   }
@@ -1927,13 +1897,13 @@
     width: 4px;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: #27272a;
+    background: var(--fb-card-hover);
     border-radius: 2px;
   }
 
   .section-card {
-    background: #0f0f12;
-    border: 1px solid #1e1e22;
+    background: var(--fb-card);
+    border: 1px solid var(--fb-border);
     border-radius: 0.625rem;
     padding: 0.75rem;
     display: flex;
@@ -1949,17 +1919,17 @@
     flex: 1;
   }
   .export-btn.enabled {
-    background: #f4f4f5 !important;
-    color: #18181b !important;
-    border-color: transparent !important;
+    background: var(--fb-blue) !important;
+    color: #ffffff !important;
+    border-color: var(--fb-blue) !important;
   }
   .export-btn.enabled:hover {
-    background: #fff !important;
+    background: #1b64c9 !important;
   }
   .export-btn.success {
-    background: #059669 !important;
+    background: #31a24c !important;
     color: white !important;
-    border-color: #059669 !important;
+    border-color: #31a24c !important;
   }
   .export-btn.error {
     background: #dc2626 !important;
@@ -1974,16 +1944,16 @@
     width: 100%;
   }
   .misc-compress-btn.icon-btn-active.enabled {
-    background: #27272a !important;
-    border-color: #52525b !important;
-    color: #d4d4d8 !important;
+    background: var(--fb-card-hover) !important;
+    border-color: var(--fb-dim) !important;
+    color: var(--fb-text) !important;
   }
   .compress-panel {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    background: #111113;
-    border: 1px solid #27272a;
+    background: var(--fb-card);
+    border: 1px solid var(--fb-card-hover);
     border-radius: 0.4rem;
     padding: 0.5rem 0.6rem;
   }
@@ -1994,8 +1964,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    border-top: 1px solid #1e1e22;
-    background: #0c0c0e;
+    border-top: 1px solid var(--fb-border);
+    background: var(--fb-bg);
   }
 
   .scroll-hint {
@@ -2003,23 +1973,11 @@
     display: flex;
     justify-content: center;
     padding: 0.35rem 0;
-    color: #71717a;
+    color: var(--fb-dim);
     cursor: pointer;
-    animation: scroll-pulse 1.8s ease-in-out infinite;
   }
   .scroll-hint:hover {
-    color: #a1a1aa;
-  }
-  @keyframes scroll-pulse {
-    0%,
-    100% {
-      opacity: 0.5;
-      transform: translateY(0);
-    }
-    50% {
-      opacity: 1;
-      transform: translateY(3px);
-    }
+    color: var(--fb-muted);
   }
 
   .field {
@@ -2044,7 +2002,7 @@
   .label {
     font-size: 0.7rem;
     font-weight: 500;
-    color: #71717a;
+    color: var(--fb-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -2052,18 +2010,12 @@
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    justify-content: center;
     font-size: 0.6rem;
     font-weight: 600;
-    color: #52525b;
+    color: var(--fb-dim);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-  }
-  .section-label::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: #27272a;
   }
 
   .slider-header {
@@ -2073,7 +2025,7 @@
   }
   .slider-value {
     font-size: 0.7rem;
-    color: #a1a1aa;
+    color: var(--fb-muted);
     font-variant-numeric: tabular-nums;
     font-weight: 600;
   }
@@ -2082,7 +2034,7 @@
     height: 4px;
     -webkit-appearance: none;
     appearance: none;
-    background: #27272a;
+    background: var(--fb-card-hover);
     border-radius: 2px;
     outline: none;
     cursor: pointer;
@@ -2092,8 +2044,8 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #d4d4d8;
-    border: 2px solid #09090b;
+    background: var(--fb-text);
+    border: 2px solid var(--fb-bg);
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
@@ -2101,8 +2053,8 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #d4d4d8;
-    border: 2px solid #09090b;
+    background: var(--fb-text);
+    border: 2px solid var(--fb-bg);
     cursor: pointer;
   }
   .styled-slider:disabled {
@@ -2132,15 +2084,15 @@
     width: 2.25rem;
     height: 1.15rem;
     border-radius: 9999px;
-    background: #27272a;
-    border: 1px solid #3f3f46;
+    background: var(--fb-card-hover);
+    border: 1px solid var(--fb-border);
     cursor: pointer;
     transition: background 0.2s;
     padding: 0;
     flex-shrink: 0;
   }
   .toggle.on {
-    background: #059669;
+    background: var(--fb-blue);
   }
   .toggle-dot {
     position: absolute;
@@ -2149,7 +2101,7 @@
     width: 0.85rem;
     height: 0.85rem;
     border-radius: 9999px;
-    background: #71717a;
+    background: var(--fb-dim);
     transition: all 0.2s;
   }
   .toggle-dot.on {
@@ -2162,8 +2114,8 @@
   }
   .tab-row {
     display: flex;
-    background: #18181b;
-    border: 1px solid #27272a;
+    background: var(--fb-card);
+    border: 1px solid var(--fb-card-hover);
     border-radius: 0.4rem;
     padding: 2px;
     gap: 2px;
@@ -2176,16 +2128,16 @@
     border-radius: 0.3rem;
     border: none;
     background: transparent;
-    color: #52525b;
+    color: var(--fb-dim);
     cursor: pointer;
     transition: all 0.15s;
   }
   .tab-btn:hover {
-    color: #a1a1aa;
+    color: var(--fb-muted);
   }
   .tab-btn.tab-active {
-    background: #27272a;
-    color: #f4f4f5;
+    background: var(--fb-card-hover);
+    color: var(--fb-blue);
   }
 
   .solid-panel {
@@ -2210,9 +2162,6 @@
       transform 0.1s;
     flex-shrink: 0;
   }
-  .color-swatch:hover {
-    transform: scale(1.12);
-  }
   .color-swatch.active {
     border-color: white;
   }
@@ -2221,7 +2170,7 @@
     width: 1.4rem;
     height: 1.4rem;
     border-radius: 0.25rem;
-    border: 1.5px dashed #52525b;
+    border: 1.5px dashed var(--fb-dim);
     cursor: pointer;
     position: relative;
     display: flex;
@@ -2232,11 +2181,10 @@
       border-color 0.15s,
       transform 0.1s;
     flex-shrink: 0;
-    background: #18181b;
+    background: var(--fb-card);
   }
   .custom-color-wrap:hover {
-    border-color: #a1a1aa;
-    transform: scale(1.12);
+    border-color: var(--fb-muted);
   }
   .custom-color-input {
     position: absolute;
@@ -2251,7 +2199,7 @@
   .picker-icon {
     width: 0.7rem;
     height: 0.7rem;
-    color: #71717a;
+    color: var(--fb-dim);
     pointer-events: none;
     flex-shrink: 0;
   }
@@ -2275,12 +2223,8 @@
       border-color 0.15s,
       transform 0.1s;
   }
-  .grad-swatch:hover {
-    transform: scale(1.04);
-  }
   .grad-swatch.active {
     border-color: white;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
   }
   .custom-grad-section {
     display: flex;
@@ -2292,23 +2236,23 @@
     font-weight: 500;
     padding: 0.25rem 0.6rem;
     border-radius: 0.35rem;
-    border: 1px dashed #3f3f46;
+    border: 1px dashed var(--fb-border);
     background: transparent;
-    color: #71717a;
+    color: var(--fb-dim);
     cursor: pointer;
     transition: all 0.15s;
     text-align: center;
     width: 100%;
   }
   .custom-grad-toggle:hover {
-    border-color: #71717a;
-    color: #a1a1aa;
+    border-color: var(--fb-dim);
+    color: var(--fb-muted);
   }
   .custom-grad-toggle.active {
     border-style: solid;
-    border-color: #52525b;
-    color: #d4d4d8;
-    background: #1c1c20;
+    border-color: var(--fb-dim);
+    color: var(--fb-text);
+    background: var(--fb-card-hover);
   }
   .custom-grad-pickers {
     display: flex;
@@ -2322,7 +2266,7 @@
     overflow: hidden;
     position: relative;
     cursor: pointer;
-    border: 1px solid #3f3f46;
+    border: 1px solid var(--fb-border);
   }
   .grad-color-input {
     position: absolute;
@@ -2340,14 +2284,14 @@
     pointer-events: none;
   }
   .custom-grad-arrow {
-    color: #52525b;
+    color: var(--fb-dim);
     font-size: 0.8rem;
     flex-shrink: 0;
   }
   .custom-grad-preview {
     height: 2rem;
     border-radius: 0.35rem;
-    border: 1px solid #27272a;
+    border: 1px solid var(--fb-card-hover);
   }
 
   .marker-colors {
@@ -2370,27 +2314,27 @@
     gap: 0.15rem;
     height: 2.75rem;
     border-radius: 0.4rem;
-    border: 1px solid #27272a;
-    background: #18181b;
-    color: #52525b;
+    border: 1px solid var(--fb-card-hover);
+    background: var(--fb-card);
+    color: var(--fb-dim);
     cursor: not-allowed;
     transition: all 0.15s;
     padding: 0.25rem 0;
   }
   .tool-btn.enabled {
-    background: #1e1e22;
-    color: #a1a1aa;
-    border-color: #2a2a2e;
+    background: var(--fb-border);
+    color: var(--fb-muted);
+    border-color: var(--fb-card-hover);
     cursor: pointer;
   }
   .tool-btn.enabled:hover {
-    background: #27272a;
-    color: #d4d4d8;
+    background: var(--fb-card-hover);
+    color: var(--fb-text);
   }
   .tool-btn.tool-active {
-    background: #3f3f46 !important;
-    border-color: #71717a !important;
-    color: white !important;
+    background: rgba(35, 116, 225, 0.18) !important;
+    border-color: var(--fb-blue) !important;
+    color: var(--fb-blue) !important;
     cursor: pointer !important;
   }
   .tool-label {
@@ -2420,19 +2364,19 @@
   .compress-label {
     font-size: 0.65rem;
     font-weight: 500;
-    color: #71717a;
+    color: var(--fb-dim);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .compress-value {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #a1a1aa;
+    color: var(--fb-muted);
     font-variant-numeric: tabular-nums;
   }
   .compress-hint {
     font-size: 0.6rem;
-    color: #52525b;
+    color: var(--fb-dim);
     text-align: center;
   }
   .compress-sizes {
@@ -2441,7 +2385,7 @@
     justify-content: center;
     gap: 0.3rem;
     font-size: 0.65rem;
-    color: #71717a;
+    color: var(--fb-dim);
     font-variant-numeric: tabular-nums;
   }
   .compress-apply-btn {
@@ -2450,8 +2394,8 @@
     padding: 0.25rem 0.6rem !important;
   }
   .compress-apply-btn.success {
-    background: #059669 !important;
-    border-color: #10b981 !important;
+    background: #31a24c !important;
+    border-color: #31a24c !important;
     color: white !important;
   }
   .compress-apply-btn.error {
@@ -2469,20 +2413,20 @@
     font-weight: 500;
     padding: 0.35rem 0.75rem;
     border-radius: 0.4rem;
-    border: 1px solid #27272a;
-    background: #18181b;
-    color: #52525b;
+    border: 1px solid var(--fb-card-hover);
+    background: var(--fb-card);
+    color: var(--fb-dim);
     cursor: not-allowed;
     transition: all 0.2s;
   }
   .btn.enabled {
-    background: #27272a;
-    color: #d4d4d8;
-    border-color: #3f3f46;
+    background: var(--fb-card-hover);
+    color: var(--fb-text);
+    border-color: var(--fb-border);
     cursor: pointer;
   }
   .btn.enabled:hover {
-    background: #3f3f46;
+    background: var(--fb-border);
   }
   .icon-btn {
     flex: 1;
@@ -2491,9 +2435,9 @@
     gap: 0.2rem !important;
   }
   .icon-btn.icon-btn-active.enabled {
-    background: #27272a !important;
-    border-color: #52525b !important;
-    color: #d4d4d8 !important;
+    background: var(--fb-card-hover) !important;
+    border-color: var(--fb-dim) !important;
+    color: var(--fb-text) !important;
   }
   .trash-btn.enabled {
     background: #2a1215 !important;
@@ -2513,7 +2457,7 @@
   }
   .vdivider {
     width: 1px;
-    background: #1a1a1e;
+    background: var(--fb-border);
     flex-shrink: 0;
   }
 
@@ -2543,7 +2487,7 @@
   }
 
   .prompt {
-    border: 2px dashed #27272a;
+    border: 2px dashed var(--fb-card-hover);
     border-radius: 1rem;
     padding: 3rem 4rem;
     text-align: center;
@@ -2552,30 +2496,30 @@
       background 0.2s;
   }
   .prompt.drag-highlight {
-    border-color: #3b82f6;
+    border-color: var(--fb-blue);
     background: rgba(59, 130, 246, 0.05);
   }
   .prompt-title {
-    color: #a1a1aa;
+    color: var(--fb-muted);
     font-size: 1.125rem;
     font-weight: 500;
     margin-bottom: 0.25rem;
   }
   .prompt-sub {
-    color: #52525b;
+    color: var(--fb-dim);
     font-size: 0.8rem;
     margin-bottom: 0.5rem;
   }
   .prompt-sub kbd {
     padding: 0.1rem 0.3rem;
-    background: #27272a;
+    background: var(--fb-card-hover);
     border-radius: 0.2rem;
-    color: #a1a1aa;
+    color: var(--fb-muted);
     font-size: 0.7rem;
     font-family: monospace;
   }
   .prompt-or {
-    color: #52525b;
+    color: var(--fb-dim);
     font-size: 0.8rem;
     margin-bottom: 0.5rem;
   }
@@ -2587,19 +2531,19 @@
     font-weight: 500;
     padding: 0.35rem 0.85rem;
     border-radius: 0.4rem;
-    background: #27272a;
-    color: #d4d4d8;
-    border: 1px solid #3f3f46;
+    background: var(--fb-blue);
+    color: #ffffff;
+    border: 1px solid var(--fb-blue);
     cursor: pointer;
     transition: background 0.2s;
   }
   .upload-btn:hover {
-    background: #3f3f46;
+    background: #1b64c9;
   }
 
   .footer-divider {
     height: 1px;
-    background: #1a1a1e;
+    background: var(--fb-border);
     flex-shrink: 0;
   }
   .footer {
@@ -2608,7 +2552,7 @@
     padding: 0.6rem 1.25rem;
   }
   .footer p {
-    color: #52525b;
+    color: var(--fb-dim);
     font-size: 0.75rem;
     margin: 0;
   }
@@ -2631,7 +2575,7 @@
     cursor: crosshair !important;
   }
   .window-chrome {
-    background: #2a2a2e;
+    background: var(--fb-card-hover);
     border-radius: 10px 10px 0 0;
     padding: 12px 16px;
     display: flex;
@@ -2769,8 +2713,8 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    background: #18181b;
-    border: 1px solid #3f3f46;
+    background: var(--fb-card);
+    border: 1px solid var(--fb-border);
     border-radius: 0.6rem;
     padding: 0.4rem 0.6rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -2789,22 +2733,22 @@
     transition: all 0.15s;
   }
   .crop-float-apply {
-    background: #059669;
+    background: #31a24c;
     color: white;
   }
   .crop-float-apply:hover {
-    background: #047857;
+    background: #2f8d46;
   }
   .crop-float-cancel {
-    background: #27272a;
-    color: #d4d4d8;
+    background: var(--fb-card-hover);
+    color: var(--fb-text);
   }
   .crop-float-cancel:hover {
-    background: #3f3f46;
+    background: var(--fb-border);
   }
   .crop-float-hint {
     font-size: 0.6rem;
-    color: #52525b;
+    color: var(--fb-dim);
     margin-left: 0.25rem;
   }
 
@@ -2819,8 +2763,8 @@
     backdrop-filter: blur(4px);
   }
   .confirm-dialog {
-    background: #18181b;
-    border: 1px solid #3f3f46;
+    background: var(--fb-card);
+    border: 1px solid var(--fb-border);
     border-radius: 0.75rem;
     padding: 1.5rem;
     max-width: 20rem;
@@ -2833,12 +2777,12 @@
   .confirm-title {
     font-size: 1rem;
     font-weight: 600;
-    color: #f4f4f5;
+    color: var(--fb-text);
     margin-bottom: 0.35rem;
   }
   .confirm-text {
     font-size: 0.8rem;
-    color: #71717a;
+    color: var(--fb-dim);
     margin-bottom: 1.25rem;
     line-height: 1.4;
   }
@@ -2850,16 +2794,16 @@
     flex: 1;
     padding: 0.4rem 0.75rem;
     border-radius: 0.4rem;
-    border: 1px solid #3f3f46;
-    background: #27272a;
-    color: #d4d4d8;
+    border: 1px solid var(--fb-border);
+    background: var(--fb-card-hover);
+    color: var(--fb-text);
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s;
   }
   .confirm-cancel-btn:hover {
-    background: #3f3f46;
+    background: var(--fb-border);
   }
   .confirm-delete-btn {
     flex: 1;
@@ -2881,7 +2825,6 @@
     background: #991b1b;
   }
 
-  /* ─── MOBILE TOGGLE & BACKDROP ─── */
   .sidebar-toggle {
     display: none;
   }
@@ -2889,7 +2832,6 @@
     display: none;
   }
 
-  /* ─── RESPONSIVE: mid screens ── */
   @media (max-width: 960px) {
     .sidebar {
       width: 13.5rem;
@@ -2903,7 +2845,6 @@
     }
   }
 
-  /* ─── RESPONSIVE: narrow ─────── */
   @media (max-width: 720px) {
     .sidebar {
       position: fixed;
@@ -2912,7 +2853,7 @@
       bottom: 0;
       width: 16rem;
       transform: translateX(-100%);
-      background: #09090b;
+      background: var(--fb-bg);
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
     }
     .sidebar.sidebar-open {
@@ -2932,14 +2873,14 @@
       width: 2.25rem;
       height: 2.25rem;
       border-radius: 0.5rem;
-      background: #18181b;
-      border: 1px solid #27272a;
-      color: #a1a1aa;
+      background: var(--fb-card);
+      border: 1px solid var(--fb-card-hover);
+      color: var(--fb-muted);
       cursor: pointer;
       transition: background 0.15s;
     }
     .sidebar-toggle:hover {
-      background: #27272a;
+      background: var(--fb-card-hover);
     }
     .sidebar-backdrop {
       display: block;
@@ -2975,7 +2916,6 @@
     }
   }
 
-  /* ─── RESPONSIVE: very narrow ── */
   @media (max-width: 480px) {
     .sidebar {
       width: 14rem;
