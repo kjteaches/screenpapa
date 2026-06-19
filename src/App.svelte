@@ -1902,7 +1902,7 @@
   }
 
   .section-card {
-    background: var(--fb-card);
+    /* background: var(--fb-card); */
     border: 1px solid var(--fb-border);
     border-radius: 0.625rem;
     padding: 0.75rem;
