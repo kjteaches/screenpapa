@@ -600,6 +600,14 @@
     if (selectedId == null) return;
     annotations = annotations.filter((a) => a.id !== selectedId);
     selectedId = null;
+    const order = annotations
+      .filter((a) => a.type === "counter")
+      .sort((a, b) => a.count - b.count)
+      .map((a) => a.id);
+    annotations = annotations.map((a) =>
+      a.type === "counter" ? { ...a, count: order.indexOf(a.id) + 1 } : a,
+    );
+    nextCounterId = order.length + 1;
   }
 
   function handleKeydown(e) {
