@@ -34,9 +34,10 @@
 
   let compressQuality = 80;
   let showCompressSlider = false;
-  let compressState = "idle";
-  let originalFileSize = null;
-  let compressedFileSize = null;
+  let estPngSize = null;
+  let estJpegSize = null;
+  let estimateToken = 0;
+  let estimateTimer;
 
   let annotations = [];
   let nextCounterId = 1;
@@ -182,8 +183,8 @@
     cropRect = null;
     cropPreview = null;
     showCompressSlider = false;
-    compressedFileSize = null;
-    compressState = "idle";
+    estPngSize = null;
+    estJpegSize = null;
     borderSize = 16;
     borderRadius = 16;
     windowEnabled = false;
@@ -206,8 +207,8 @@
     cropRect = null;
     cropPreview = null;
     showCompressSlider = false;
-    originalFileSize = blob.size;
-    compressedFileSize = null;
+    estPngSize = null;
+    estJpegSize = null;
     storeOriginal(blob);
   }
 
@@ -262,9 +263,8 @@
     cropPreview = null;
     showCompressSlider = false;
     compressQuality = 80;
-    compressState = "idle";
-    originalFileSize = null;
-    compressedFileSize = null;
+    estPngSize = null;
+    estJpegSize = null;
     originalBlob = null;
     showClearConfirm = false;
   }
@@ -538,8 +538,14 @@
   }
 
   function toggleCompressSlider() {
+    if (!hasImage || !imgLoaded) return;
     showCompressSlider = !showCompressSlider;
-    compressedFileSize = null;
+    if (showCompressSlider) {
+      estimateExportSizes();
+    } else {
+      estPngSize = null;
+      estJpegSize = null;
+    }
   }
 
   function formatBytes(bytes) {
@@ -549,32 +555,32 @@
     return (bytes / 1048576).toFixed(2) + " MB";
   }
 
-  function compressImage() {
-    if (!imgEl || !imgLoaded) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = imgEl.naturalWidth;
-    canvas.height = imgEl.naturalHeight;
-    canvas.getContext("2d").drawImage(imgEl, 0, 0);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          compressState = "error";
-          setTimeout(() => (compressState = "idle"), 1500);
-          return;
-        }
-        compressedFileSize = blob.size;
-        if (imgSrc.startsWith("blob:")) URL.revokeObjectURL(imgSrc);
-        imgLoaded = false;
-        imgSrc = URL.createObjectURL(blob);
-        compressState = "success";
-        setTimeout(() => {
-          compressState = "idle";
-          showCompressSlider = false;
-        }, 1200);
-      },
-      "image/jpeg",
-      compressQuality / 100,
-    );
+  function scheduleEstimate() {
+    clearTimeout(estimateTimer);
+    estimateTimer = setTimeout(estimateExportSizes, 140);
+  }
+
+  function estimateExportSizes() {
+    if (!hasImage || !imgLoaded) {
+      estPngSize = null;
+      estJpegSize = null;
+      return;
+    }
+    const canvas = renderCanvas();
+    if (!canvas) return;
+    const token = ++estimateToken;
+    canvas.toBlob((png) => {
+      if (token !== estimateToken) return;
+      estPngSize = png ? png.size : null;
+      canvas.toBlob(
+        (jpg) => {
+          if (token !== estimateToken) return;
+          estJpegSize = jpg ? jpg.size : null;
+        },
+        "image/jpeg",
+        compressQuality / 100,
+      );
+    }, "image/png");
   }
 
   function getRelPos(e) {
@@ -866,23 +872,44 @@
     if (!hasImage || !imgLoaded) return;
     const canvas = renderCanvas();
     if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "screenshot.png";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-    }, "image/png");
+    const useJpeg = showCompressSlider;
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = useJpeg ? "screenshot.jpg" : "screenshot.png";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+      },
+      useJpeg ? "image/jpeg" : "image/png",
+      useJpeg ? compressQuality / 100 : undefined,
+    );
   }
 
   $: displayCrop = cropRect || cropPreview;
+
+  $: savings =
+    estPngSize && estJpegSize
+      ? Math.round((1 - estJpegSize / estPngSize) * 100)
+      : null;
+
+  $: exportInputs = [
+    borderSize,
+    borderRadius,
+    windowEnabled,
+    bgMode,
+    wrapperBg,
+    annotations,
+    compressQuality,
+  ];
+  $: if (showCompressSlider && imgLoaded && exportInputs) scheduleEstimate();
 </script>
 
 <svelte:window
@@ -1279,6 +1306,57 @@
             <span>Clear</span>
           </button>
         </div>
+        <div
+          class="field field-inline"
+          class:disabled-field={!hasImage || !imgLoaded}
+        >
+          <span class="label">Compress</span>
+          <button
+            class="toggle"
+            class:on={showCompressSlider}
+            on:click|stopPropagation={toggleCompressSlider}
+            role="switch"
+            aria-checked={showCompressSlider}
+            aria-label="Compress on export"
+          >
+            <span class="toggle-dot" class:on={showCompressSlider}></span>
+          </button>
+        </div>
+        {#if showCompressSlider}
+          <div class="compress-panel">
+            <div class="compress-quality-row">
+              <span class="compress-label">Quality</span><span
+                class="compress-value">{compressQuality}%</span
+              >
+            </div>
+            <input
+              type="range"
+              min="10"
+              max="100"
+              step="5"
+              bind:value={compressQuality}
+              class="styled-slider"
+            />
+            <div class="compress-readout">
+              {#if estJpegSize}
+                <span class="compress-est">≈ {formatBytes(estJpegSize)}</span>
+                {#if savings !== null}
+                  <span class="compress-delta" class:good={savings > 0}
+                    >{#if savings > 0}{savings}% smaller{:else if savings < 0}{-savings}%
+                      larger{:else}same size{/if}</span
+                  >
+                {/if}
+              {:else}
+                <span class="compress-est compress-dim">Calculating…</span>
+              {/if}
+            </div>
+            {#if estPngSize}
+              <div class="compress-context">
+                Converts to JPEG. Original PNG would be {formatBytes(estPngSize)}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -1303,77 +1381,6 @@
 
     <div class="sidebar-actions">
       <div class="section-label">Export</div>
-      <button
-        class="btn misc-compress-btn"
-        class:enabled={hasImage && imgLoaded}
-        class:icon-btn-active={showCompressSlider}
-        disabled={!hasImage || !imgLoaded}
-        on:click|stopPropagation={toggleCompressSlider}
-      >
-        <svg
-          class="icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><line x1="5" y1="12" x2="19" y2="12" /><path
-            d="M12 4v5M9 6l3 3 3-3"
-          /><path d="M12 20v-5M9 18l3-3 3 3" /></svg
-        >
-        <span>Compress</span>
-      </button>
-      {#if showCompressSlider}
-        <div class="compress-panel">
-          <div class="compress-quality-row">
-            <span class="compress-label">Quality</span><span
-              class="compress-value">{compressQuality}%</span
-            >
-          </div>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            step="5"
-            bind:value={compressQuality}
-            class="styled-slider"
-          />
-          <div class="compress-hint">
-            {#if compressQuality >= 85}Highest quality · larger file{:else if compressQuality >= 50}Balanced
-              quality &amp; size{:else}Smallest file · visible artifacts{/if}
-          </div>
-          {#if originalFileSize}
-            <div class="compress-sizes">
-              <span>Original: {formatBytes(originalFileSize)}</span
-              >{#if compressedFileSize}<span
-                  >→ {formatBytes(compressedFileSize)}</span
-                >{/if}
-            </div>
-          {/if}
-          <button
-            class="btn compress-apply-btn enabled"
-            class:success={compressState === "success"}
-            class:error={compressState === "error"}
-            on:click|stopPropagation={compressImage}
-          >
-            {#if compressState === "success"}<svg
-                class="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                ><path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M5 13l4 4L19 7"
-                /></svg
-              ><span>Done</span>
-            {:else if compressState === "error"}<span>Failed</span>
-            {:else}<span>Apply compression</span>{/if}
-          </button>
-        </div>
-      {/if}
       <div class="export-row">
         <button
           class="btn export-btn"
@@ -1425,7 +1432,7 @@
               d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M7 15l5 5 5-5"
             /></svg
           >
-          <span>Download</span>
+          <span>{showCompressSlider ? "JPEG" : "Download"}</span>
         </button>
       </div>
     </div>
@@ -1952,14 +1959,6 @@
     display: flex;
     gap: 0.3rem;
   }
-  .misc-compress-btn {
-    width: 100%;
-  }
-  .misc-compress-btn.icon-btn-active.enabled {
-    background: var(--fb-accent-soft) !important;
-    border-color: var(--fb-blue) !important;
-    color: var(--fb-blue) !important;
-  }
   .compress-panel {
     display: flex;
     flex-direction: column;
@@ -2149,7 +2148,8 @@
   }
   .tab-btn.tab-active {
     background: var(--fb-accent-soft);
-    color: var(--fb-blue);
+    /* color: var(--fb-blue); */
+    color: var(--fb-text);
   }
 
   .solid-panel {
@@ -2401,34 +2401,35 @@
     color: var(--fb-muted);
     font-variant-numeric: tabular-nums;
   }
-  .compress-hint {
-    font-size: 0.6rem;
-    color: var(--fb-dim);
-    text-align: center;
-  }
-  .compress-sizes {
+  .compress-readout {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: center;
-    gap: 0.3rem;
+    gap: 0.4rem;
+  }
+  .compress-est {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--fb-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .compress-est.compress-dim {
+    font-weight: 500;
+    color: var(--fb-dim);
+  }
+  .compress-delta {
     font-size: 0.65rem;
+    font-weight: 500;
     color: var(--fb-dim);
     font-variant-numeric: tabular-nums;
   }
-  .compress-apply-btn {
-    width: 100%;
-    font-size: 0.75rem !important;
-    padding: 0.25rem 0.6rem !important;
+  .compress-delta.good {
+    color: var(--fb-success);
   }
-  .compress-apply-btn.success {
-    background: var(--fb-success) !important;
-    border-color: var(--fb-success) !important;
-    color: white !important;
-  }
-  .compress-apply-btn.error {
-    background: var(--fb-danger) !important;
-    border-color: var(--fb-danger) !important;
-    color: white !important;
+  .compress-context {
+    font-size: 0.6rem;
+    color: var(--fb-dim);
+    text-align: center;
   }
 
   .btn {
@@ -2460,11 +2461,6 @@
     font-size: 0.65rem !important;
     padding: 0.25rem 0.35rem !important;
     gap: 0.2rem !important;
-  }
-  .icon-btn.icon-btn-active.enabled {
-    background: var(--fb-accent-soft) !important;
-    border-color: var(--fb-blue) !important;
-    color: var(--fb-blue) !important;
   }
   .trash-btn.enabled {
     background: var(--fb-danger) !important;
@@ -2515,7 +2511,7 @@
 
   .prompt {
     border: 2px dashed var(--fb-card-hover);
-    border-radius: 1rem;
+    border-radius: 2rem;
     padding: 3rem 4rem;
     text-align: center;
     transition:
