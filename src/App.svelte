@@ -1121,7 +1121,7 @@
             disabled={!hasImage}
             on:click|stopPropagation={() => toggleTool("arrow")}
           >
-            <svg
+            <span class="tool-icon"><svg
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -1131,7 +1131,7 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               ><path d="M12 5V19" /><path d="M5 12l7-7 7 7" /></svg
-            >
+            ></span>
             <span class="tool-label">Arrow</span>
           </button>
           <button
@@ -1142,7 +1142,7 @@
             on:click|stopPropagation={() => toggleTool("counter")}
             title="Step counter"
           >
-            <svg
+            <span class="tool-icon"><svg
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -1161,7 +1161,7 @@
                 font-weight="bold"
                 stroke="none">2</text
               ></svg
-            >
+            ></span>
             <span class="tool-label">Count</span>
           </button>
           <button
@@ -1172,7 +1172,7 @@
             on:click|stopPropagation={() => toggleTool("rect")}
             title="Draw a rectangle"
           >
-            <svg
+            <span class="tool-icon"><svg
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -1182,7 +1182,7 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               ><rect x="3" y="5" width="18" height="14" rx="3" /></svg
-            >
+            ></span>
             <span class="tool-label">Box</span>
           </button>
           <button
@@ -1192,7 +1192,7 @@
             disabled={!hasImage}
             on:click|stopPropagation={() => toggleTool("crop")}
           >
-            <svg
+            <span class="tool-icon"><svg
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -1207,7 +1207,7 @@
                 width="12"
                 height="12"
               /></svg
-            >
+            ></span>
             <span class="tool-label">Crop</span>
           </button>
         </div>
@@ -1814,7 +1814,7 @@
             height="28"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#fca5a5"
+            style="stroke: var(--fb-danger-text)"
             stroke-width="1.5"
             ><path
               stroke-linecap="round"
@@ -1871,6 +1871,14 @@
     --fb-muted: #b0b3b8;
     --fb-dim: #8a8d91;
     --fb-blue: #2374e1;
+    --fb-accent-hover: #1b64c9;
+    --fb-accent-soft: rgba(35, 116, 225, 0.18);
+    --fb-accent-faint: rgba(35, 116, 225, 0.07);
+    --fb-success: #31a24c;
+    --fb-success-hover: #2f8d46;
+    --fb-danger: #DD3333;
+    --fb-danger-hover: #c42b2b;
+    --fb-danger-text: #fca5a5;
     display: flex;
     height: 100vh;
     background: var(--fb-bg);
@@ -1906,13 +1914,13 @@
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
     background: var(--fb-card-hover);
-    border-radius: 2px;
+    border-radius: 9999px;
   }
 
   .section-card {
     /* background: var(--fb-card); */
     border: 1px solid var(--fb-border);
-    border-radius: 0.625rem;
+    border-radius: 1.25rem;
     padding: 0.75rem;
     display: flex;
     flex-direction: column;
@@ -1932,17 +1940,17 @@
     border-color: var(--fb-blue) !important;
   }
   .export-btn.enabled:hover {
-    background: #1b64c9 !important;
+    background: var(--fb-accent-hover) !important;
   }
   .export-btn.success {
-    background: #31a24c !important;
+    background: var(--fb-success) !important;
     color: white !important;
-    border-color: #31a24c !important;
+    border-color: var(--fb-success) !important;
   }
   .export-btn.error {
-    background: #dc2626 !important;
+    background: var(--fb-danger) !important;
     color: white !important;
-    border-color: #dc2626 !important;
+    border-color: var(--fb-danger) !important;
   }
   .misc-row {
     display: flex;
@@ -1952,9 +1960,9 @@
     width: 100%;
   }
   .misc-compress-btn.icon-btn-active.enabled {
-    background: var(--fb-card-hover) !important;
-    border-color: var(--fb-dim) !important;
-    color: var(--fb-text) !important;
+    background: var(--fb-accent-soft) !important;
+    border-color: var(--fb-blue) !important;
+    color: var(--fb-blue) !important;
   }
   .compress-panel {
     display: flex;
@@ -2043,7 +2051,7 @@
     -webkit-appearance: none;
     appearance: none;
     background: var(--fb-card-hover);
-    border-radius: 2px;
+    border-radius: 9999px;
     outline: none;
     cursor: pointer;
   }
@@ -2124,7 +2132,7 @@
     display: flex;
     background: var(--fb-card);
     border: 1px solid var(--fb-card-hover);
-    border-radius: 0.4rem;
+    border-radius: 9999px;
     padding: 2px;
     gap: 2px;
   }
@@ -2133,7 +2141,7 @@
     font-size: 0.7rem;
     font-weight: 500;
     padding: 0.25rem 0;
-    border-radius: 0.3rem;
+    border-radius: 9999px;
     border: none;
     background: transparent;
     color: var(--fb-dim);
@@ -2144,7 +2152,7 @@
     color: var(--fb-muted);
   }
   .tab-btn.tab-active {
-    background: var(--fb-card-hover);
+    background: var(--fb-accent-soft);
     color: var(--fb-blue);
   }
 
@@ -2162,7 +2170,7 @@
   .color-swatch {
     width: 1.4rem;
     height: 1.4rem;
-    border-radius: 0.25rem;
+    border-radius: 50%;
     border: 2px solid transparent;
     cursor: pointer;
     transition:
@@ -2177,7 +2185,7 @@
   .custom-color-wrap {
     width: 1.4rem;
     height: 1.4rem;
-    border-radius: 0.25rem;
+    border-radius: 50%;
     border: 1.5px dashed var(--fb-dim);
     cursor: pointer;
     position: relative;
@@ -2224,7 +2232,7 @@
   }
   .grad-swatch {
     height: 2rem;
-    border-radius: 0.35rem;
+    border-radius: 9999px;
     border: 2px solid transparent;
     cursor: pointer;
     transition:
@@ -2243,7 +2251,7 @@
     font-size: 0.7rem;
     font-weight: 500;
     padding: 0.25rem 0.6rem;
-    border-radius: 0.35rem;
+    border-radius: 9999px;
     border: 1px dashed var(--fb-border);
     background: transparent;
     color: var(--fb-dim);
@@ -2258,9 +2266,9 @@
   }
   .custom-grad-toggle.active {
     border-style: solid;
-    border-color: var(--fb-dim);
-    color: var(--fb-text);
-    background: var(--fb-card-hover);
+    border-color: var(--fb-blue);
+    color: var(--fb-blue);
+    background: var(--fb-accent-soft);
   }
   .custom-grad-pickers {
     display: flex;
@@ -2270,7 +2278,7 @@
   .custom-grad-picker-wrap {
     flex: 1;
     height: 1.75rem;
-    border-radius: 0.35rem;
+    border-radius: 9999px;
     overflow: hidden;
     position: relative;
     cursor: pointer;
@@ -2298,7 +2306,7 @@
   }
   .custom-grad-preview {
     height: 2rem;
-    border-radius: 0.35rem;
+    border-radius: 9999px;
     border: 1px solid var(--fb-card-hover);
   }
 
@@ -2319,31 +2327,46 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.15rem;
-    height: 2.75rem;
-    border-radius: 0.4rem;
-    border: 1px solid var(--fb-card-hover);
-    background: var(--fb-card);
+    gap: 0.4rem;
+    border: none;
+    background: transparent;
     color: var(--fb-dim);
     cursor: not-allowed;
-    transition: all 0.15s;
+    transition: color 0.15s;
     padding: 0.25rem 0;
   }
+  .tool-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    border: 1px solid var(--fb-card-hover);
+    background: var(--fb-card);
+    transition: all 0.15s;
+  }
   .tool-btn.enabled {
-    background: var(--fb-border);
     color: var(--fb-muted);
-    border-color: var(--fb-card-hover);
     cursor: pointer;
   }
+  .tool-btn.enabled .tool-icon {
+    background: var(--fb-border);
+    border-color: var(--fb-card-hover);
+  }
   .tool-btn.enabled:hover {
-    background: var(--fb-card-hover);
     color: var(--fb-text);
   }
+  .tool-btn.enabled:hover .tool-icon {
+    background: var(--fb-card-hover);
+  }
   .tool-btn.tool-active {
-    background: rgba(35, 116, 225, 0.18) !important;
-    border-color: var(--fb-blue) !important;
     color: var(--fb-blue) !important;
     cursor: pointer !important;
+  }
+  .tool-btn.tool-active .tool-icon {
+    background: var(--fb-accent-soft) !important;
+    border-color: var(--fb-blue) !important;
   }
   .tool-label {
     font-size: 0.55rem;
@@ -2353,15 +2376,15 @@
   }
 
   .delete-btn {
-    background: #7f1d1d !important;
-    border-color: #991b1b !important;
-    color: #fca5a5 !important;
+    background: var(--fb-danger) !important;
+    border: none !important;
+    color: #fff !important;
     cursor: pointer !important;
     width: 100%;
     font-size: 0.75rem !important;
   }
   .delete-btn:hover {
-    background: #991b1b !important;
+    background: var(--fb-danger-hover) !important;
   }
 
   .compress-quality-row {
@@ -2402,13 +2425,13 @@
     padding: 0.25rem 0.6rem !important;
   }
   .compress-apply-btn.success {
-    background: #31a24c !important;
-    border-color: #31a24c !important;
+    background: var(--fb-success) !important;
+    border-color: var(--fb-success) !important;
     color: white !important;
   }
   .compress-apply-btn.error {
-    background: #dc2626 !important;
-    border-color: #dc2626 !important;
+    background: var(--fb-danger) !important;
+    border-color: var(--fb-danger) !important;
     color: white !important;
   }
 
@@ -2420,7 +2443,7 @@
     font-size: 0.8rem;
     font-weight: 500;
     padding: 0.35rem 0.75rem;
-    border-radius: 0.4rem;
+    border-radius: 9999px;
     border: 1px solid var(--fb-card-hover);
     background: var(--fb-card);
     color: var(--fb-dim);
@@ -2443,17 +2466,17 @@
     gap: 0.2rem !important;
   }
   .icon-btn.icon-btn-active.enabled {
-    background: var(--fb-card-hover) !important;
-    border-color: var(--fb-dim) !important;
-    color: var(--fb-text) !important;
+    background: var(--fb-accent-soft) !important;
+    border-color: var(--fb-blue) !important;
+    color: var(--fb-blue) !important;
   }
   .trash-btn.enabled {
-    background: #2a1215 !important;
-    border-color: #7f1d1d !important;
-    color: #fca5a5 !important;
+    background: var(--fb-danger) !important;
+    border: none !important;
+    color: #fff !important;
   }
   .trash-btn.enabled:hover {
-    background: #3b1219 !important;
+    background: var(--fb-danger-hover) !important;
   }
   .icon {
     width: 0.9rem;
@@ -2491,7 +2514,7 @@
     transition: background 0.2s;
   }
   .canvas-area.drag-over {
-    background: rgba(59, 130, 246, 0.05);
+    background: var(--fb-accent-faint);
   }
 
   .prompt {
@@ -2505,7 +2528,7 @@
   }
   .prompt.drag-highlight {
     border-color: var(--fb-blue);
-    background: rgba(59, 130, 246, 0.05);
+    background: var(--fb-accent-faint);
   }
   .prompt-title {
     color: var(--fb-muted);
@@ -2521,7 +2544,7 @@
   .prompt-sub kbd {
     padding: 0.1rem 0.3rem;
     background: var(--fb-card-hover);
-    border-radius: 0.2rem;
+    border-radius: 9999px;
     color: var(--fb-muted);
     font-size: 0.7rem;
     font-family: monospace;
@@ -2538,7 +2561,7 @@
     font-size: 0.8rem;
     font-weight: 500;
     padding: 0.35rem 0.85rem;
-    border-radius: 0.4rem;
+    border-radius: 9999px;
     background: var(--fb-blue);
     color: #ffffff;
     border: 1px solid var(--fb-blue);
@@ -2546,7 +2569,7 @@
     transition: background 0.2s;
   }
   .upload-btn:hover {
-    background: #1b64c9;
+    background: var(--fb-accent-hover);
   }
 
   .footer-divider {
@@ -2665,7 +2688,7 @@
     height: 10px;
     background: white;
     border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
+    border-radius: 50%;
     pointer-events: auto;
   }
   .crop-handle.nw {
@@ -2723,7 +2746,7 @@
     gap: 0.4rem;
     background: var(--fb-card);
     border: 1px solid var(--fb-border);
-    border-radius: 0.6rem;
+    border-radius: 9999px;
     padding: 0.4rem 0.6rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     z-index: 20;
@@ -2735,17 +2758,17 @@
     font-size: 0.75rem;
     font-weight: 500;
     padding: 0.3rem 0.6rem;
-    border-radius: 0.35rem;
+    border-radius: 9999px;
     border: none;
     cursor: pointer;
     transition: all 0.15s;
   }
   .crop-float-apply {
-    background: #31a24c;
+    background: var(--fb-success);
     color: white;
   }
   .crop-float-apply:hover {
-    background: #2f8d46;
+    background: var(--fb-success-hover);
   }
   .crop-float-cancel {
     background: var(--fb-card-hover);
@@ -2801,7 +2824,7 @@
   .confirm-cancel-btn {
     flex: 1;
     padding: 0.4rem 0.75rem;
-    border-radius: 0.4rem;
+    border-radius: 9999px;
     border: 1px solid var(--fb-border);
     background: var(--fb-card-hover);
     color: var(--fb-text);
@@ -2816,10 +2839,10 @@
   .confirm-delete-btn {
     flex: 1;
     padding: 0.4rem 0.75rem;
-    border-radius: 0.4rem;
-    border: 1px solid #991b1b;
-    background: #7f1d1d;
-    color: #fca5a5;
+    border-radius: 9999px;
+    border: none;
+    background: var(--fb-danger);
+    color: #fff;
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
@@ -2830,7 +2853,7 @@
     gap: 0.3rem;
   }
   .confirm-delete-btn:hover {
-    background: #991b1b;
+    background: var(--fb-danger-hover);
   }
 
   .sidebar-toggle {
@@ -2880,7 +2903,7 @@
       z-index: 60;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: 50%;
       background: var(--fb-card);
       border: 1px solid var(--fb-card-hover);
       color: var(--fb-muted);
@@ -2939,8 +2962,9 @@
     .sidebar-actions {
       padding: 0.5rem 0.5rem 1rem;
     }
-    .tool-btn {
-      height: 2.5rem;
+    .tool-icon {
+      width: 2.25rem;
+      height: 2.25rem;
     }
     .canvas-area {
       padding: 0.5rem;
