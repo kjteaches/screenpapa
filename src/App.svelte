@@ -67,7 +67,7 @@
   function checkScrollHint() {
     if (!sidebarScrollEl) return;
     const { scrollTop, scrollHeight, clientHeight } = sidebarScrollEl;
-    showScrollHint = scrollHeight - scrollTop - clientHeight > 0;
+    showScrollHint = scrollHeight - scrollTop - clientHeight > 12;
   }
 
   function onSidebarScroll() {
@@ -1904,11 +1904,6 @@
     flex-direction: column;
     gap: 0.5rem;
   }
-  .sidebar-scroll::before,
-  .sidebar-scroll::after {
-    content: "";
-    flex: 1;
-  }
   .sidebar-scroll::-webkit-scrollbar {
     width: 4px;
   }
@@ -1925,6 +1920,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.625rem;
+    flex-shrink: 0;
   }
 
   .export-row {
